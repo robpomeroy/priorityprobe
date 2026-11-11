@@ -62,6 +62,7 @@ For hosted, multi-user deployments, the repository includes a complete `docker-c
    ```bash
    cp .env.example .env
    # Edit .env and set DJANGO_SECRET_KEY, ALLOWED_HOSTS, DB_PASSWORD, etc.
+   # Optionally set OLLAMA_ALLOWED_HOSTS (e.g. "ollama,host.docker.internal") to permit specific Ollama endpoints
    ```
 
 2. Generate or place your TLS certificates in `./certs/`:

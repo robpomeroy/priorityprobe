@@ -28,6 +28,7 @@ services:
       DB_HOST: db
       DB_PORT: 3306
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      OLLAMA_ALLOWED_HOSTS: ${OLLAMA_ALLOWED_HOSTS:-}
     depends_on:
       - db
     expose:
