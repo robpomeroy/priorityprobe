@@ -33,10 +33,10 @@ For hosted, multi-user deployments, the repository includes a complete `docker-c
                   |         Client Browser         |
                   +--------------------------------+
                                   |
-                                  | HTTP (Port 80 / 443)
+                                  | HTTPS (Port 443) / HTTP (Port 80 Redirect)
                                   v
                   +--------------------------------+
-                  |       Nginx Reverse Proxy      |
+                  |       Nginx TLS Reverse Proxy  |
                   +--------------------------------+
                                   |
                  +----------------+----------------+
@@ -58,10 +58,18 @@ For hosted, multi-user deployments, the repository includes a complete `docker-c
 
 ### Steps to Run:
 
-1. Copy `.env.example` to `.env` and configure your production secret key:
+1. Copy `.env.example` to `.env` and configure your production secret key and passwords:
    ```bash
    cp .env.example .env
-   # Edit .env and set DJANGO_SECRET_KEY, ALLOWED_HOSTS, etc.
+   # Edit .env and set DJANGO_SECRET_KEY, ALLOWED_HOSTS, DB_PASSWORD, etc.
+   ```
+
+2. Generate or place your TLS certificates in `./certs/`:
+   ```bash
+   mkdir -p certs
+   # For production, place fullchain.pem and privkey.pem in certs/
+   # For local testing, generate self-signed certs:
+   openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout certs/privkey.pem -out certs/fullchain.pem -subj "/CN=localhost"
    ```
 
 2. Build and start containers in the background:

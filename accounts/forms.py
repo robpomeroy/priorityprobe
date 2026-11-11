@@ -1,11 +1,48 @@
 import ipaddress
+import socket
 from urllib.parse import urlparse
 from django import forms
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from accounts.models import UserLLMConfig
 
 ALLOWED_PROVIDERS = {"ollama", "openrouter", "none"}
+
+def is_safe_ollama_endpoint(hostname: str) -> bool:
+    """
+    Checks if an Ollama hostname/IP is permitted.
+    In local standalone mode, localhost / 127.0.0.1 is permitted.
+    Private/internal network ranges or cloud metadata are prohibited unless explicitly allowed.
+    """
+    # Check configured allowlist in settings if present
+    allowlist = getattr(settings, "OLLAMA_ALLOWED_HOSTS", None)
+    if allowlist is not None and hostname in allowlist:
+        return True
+
+    # By default, allow localhost / 127.0.0.1 / ::1
+    if hostname in ("localhost", "127.0.0.1", "::1"):
+        return True
+
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_loopback:
+            return True
+        if ip.is_private or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+            return False
+    except ValueError:
+        # Resolve hostname to check destination IP
+        try:
+            resolved_ip_str = socket.gethostbyname(hostname)
+            resolved_ip = ipaddress.ip_address(resolved_ip_str)
+            if resolved_ip.is_loopback:
+                return True
+            if resolved_ip.is_private or resolved_ip.is_link_local or resolved_ip.is_reserved:
+                return False
+        except Exception:
+            return False
+
+    return True
 
 def validate_llm_api_base(provider: str, api_base: str):
     if not api_base or provider == "none":
@@ -19,8 +56,7 @@ def validate_llm_api_base(provider: str, api_base: str):
     if not hostname:
         raise ValidationError("Invalid API Base hostname.")
 
-    # Check for dangerous metadata IP addresses
-    if hostname == "169.254.169.254" or hostname == "metadata.google.internal":
+    if hostname in ("169.254.169.254", "metadata.google.internal"):
         raise ValidationError("Access to cloud metadata endpoints is prohibited.")
 
     if provider == "openrouter":
@@ -30,8 +66,8 @@ def validate_llm_api_base(provider: str, api_base: str):
             raise ValidationError("OpenRouter connections must use HTTPS.")
     
     elif provider == "ollama":
-        # Ollama typically runs on localhost or a private LAN host
-        pass
+        if not is_safe_ollama_endpoint(hostname):
+            raise ValidationError("Disallowed Ollama destination: private, link-local, or unresolvable internal hostnames are prohibited.")
 
     return api_base
 

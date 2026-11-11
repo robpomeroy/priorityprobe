@@ -463,12 +463,21 @@ def test_chat_view_empty_and_no_consent(client, user, framework):
 
 def test_secret_key_production_error():
     import os
-    from config import settings
-    with patch.dict("os.environ", {"DJANGO_SECRET_KEY": "", "DEBUG": "False"}):
+    import importlib
+    import sys
+    from unittest.mock import patch
+
+    # Ensure config.settings actually raises ValueError when imported with empty key and DEBUG=False
+    with patch.dict(os.environ, {"DJANGO_SECRET_KEY": "", "DEBUG": "False"}):
+        if "config.settings" in sys.modules:
+            del sys.modules["config.settings"]
         with pytest.raises(ValueError, match="DJANGO_SECRET_KEY must be set in production"):
-            # Re-evaluating settings behavior
-            if not os.environ.get("DJANGO_SECRET_KEY") and os.environ.get("DEBUG", "True").lower() not in ("true", "1", "yes"):
-                raise ValueError("DJANGO_SECRET_KEY must be set in production (when DEBUG is False).")
+            importlib.import_module("config.settings")
+
+    # Restore settings module for subsequent tests
+    if "config.settings" in sys.modules:
+        del sys.modules["config.settings"]
+    importlib.import_module("config.settings")
 
 def test_api_base_ssrf_validation(client, user):
     client.force_login(user)
@@ -497,12 +506,15 @@ def test_api_base_ssrf_validation(client, user):
 def test_admin_queryset_filtering(user, other_user, framework, domain, why, objective, goal):
     from frameworks.admin import FrameworkAdmin, DomainAdmin, WhyAdmin, ObjectiveAdmin, GoalAdmin
     from decisions.admin import DecisionRecordAdmin, LLMReflectionLogAdmin
+    from accounts.admin import UserLLMConfigAdmin
+    from accounts.models import UserLLMConfig
     from django.contrib.admin.sites import AdminSite
 
     site = AdminSite()
     f_admin = FrameworkAdmin(Framework, site)
     d_admin = DomainAdmin(Domain, site)
     dec_admin = DecisionRecordAdmin(DecisionRecord, site)
+    llm_admin = UserLLMConfigAdmin(UserLLMConfig, site)
 
     # Regular staff user (not superuser)
     other_user.is_staff = True
@@ -513,11 +525,24 @@ def test_admin_queryset_filtering(user, other_user, framework, domain, why, obje
     assert f_admin.get_queryset(request).count() == 0
     assert d_admin.get_queryset(request).count() == 0
     assert dec_admin.get_queryset(request).count() == 0
+    assert llm_admin.get_queryset(request).count() == 0
+
+    # Foreign key and M2M formfield scoping for regular staff
+    fw_field = d_admin.formfield_for_foreignkey(Domain._meta.get_field("framework"), request)
+    assert fw_field.queryset.filter(owner=other_user).count() == 0
+    assert fw_field.queryset.filter(owner=user).count() == 0
+
+    dec_fw_field = dec_admin.formfield_for_foreignkey(DecisionRecord._meta.get_field("framework"), request)
+    assert dec_fw_field.queryset.filter(owner=other_user).count() == 0
+
+    # Create UserLLMConfig for user
+    UserLLMConfig.objects.get_or_create(user=user)
 
     # Superuser sees all
     request.user.is_superuser = True
     assert f_admin.get_queryset(request).count() >= 1
     assert d_admin.get_queryset(request).count() >= 1
+    assert llm_admin.get_queryset(request).count() >= 1
 
 def test_decision_empty_prompt_uses_default(client, user, framework):
     client.force_login(user)
