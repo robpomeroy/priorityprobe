@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }} — PrioritySuite{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center py-4">
+    <div class="col-lg-10">
+        <div class="card shadow-sm border mb-4">
+            <div class="card-header bg-transparent py-3 d-flex justify-content-between align-items-center">
+                <h4 class="mb-0 text-terracotta">{{ title }}</h4>
+                <div>
+                    <button class="btn btn-sm btn-outline-secondary me-2" onclick="navigator.clipboard.writeText(document.getElementById('md-content').value); alert('Copied to clipboard!')">Copy Markdown</button>
+                    <a href="?download=1" class="btn btn-sm btn-primary bg-terracotta">Download .md File</a>
+                </div>
+            </div>
+            <div class="card-body p-4">
+                <p class="text-muted small">
+                    This Markdown document includes your structured priorities along with complete facilitator instructions. You can paste it directly into ChatGPT, Claude, Gemini, or any local LLM to use as an external thinking partner.
+                </p>
+                <div class="mb-3">
+                    <textarea id="md-content" class="form-control font-monospace small" rows="20" readonly>{{ markdown_content }}</textarea>
+                </div>
+                <div class="text-end">
+                    <button type="button" class="btn btn-outline-secondary" onclick="history.back()">Back</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

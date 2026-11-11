@@ -1,0 +1,164 @@
+{% extends 'base.html' %}
+{% block title %}{{ decision.title }} — Assessment{% endblock %}
+
+{% block content %}
+<div class="row mb-4 align-items-center">
+    <div class="col-md-7">
+        <div class="d-flex align-items-center gap-2 mb-1">
+            <span class="badge bg-secondary-subtle text-secondary fs-6">{{ decision.get_status_display }}</span>
+            <span class="text-muted small">Assessed on {{ decision.created_at|date:"M d, Y" }}</span>
+        </div>
+        <h2 class="text-terracotta mb-0">{{ decision.title }}</h2>
+    </div>
+    <div class="col-md-5 text-md-end mt-3 mt-md-0">
+        <a href="{% url 'decisions:decision_edit' decision.id %}" class="btn btn-outline-primary btn-sm">Edit Assessment</a>
+        <a href="{% url 'exports:export_decision' decision.id %}" class="btn btn-outline-dark btn-sm">Export Markdown</a>
+        <a href="{% url 'decisions:decision_list' %}" class="btn btn-outline-secondary btn-sm">All Assessments</a>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Left Column: Assessment Breakdown -->
+    <div class="col-lg-7">
+        <!-- Proposal -->
+        <div class="card shadow-sm border mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h5 class="mb-0 text-terracotta">Proposed Decision / Opportunity</h5>
+            </div>
+            <div class="card-body p-4">
+                <p class="lead fs-6 mb-0">{{ decision.proposal_description }}</p>
+            </div>
+        </div>
+
+        <!-- Cross-Domain Tensions: Supporting vs Conflicting -->
+        <div class="row g-3 mb-4">
+            <div class="col-md-6">
+                <div class="card shadow-sm border h-100 border-start border-4 border-sage">
+                    <div class="card-header bg-transparent py-2">
+                        <span class="fw-bold text-sage">Supporting Priorities</span>
+                    </div>
+                    <div class="card-body p-3">
+                        <div class="small fw-semibold text-muted mb-1">Whys Engaged:</div>
+                        <ul class="list-unstyled small mb-3">
+                            {% for why in decision.relevant_whys.all %}
+                                <li class="mb-1">
+                                    • {{ why.title }} <span class="badge bg-light text-muted border small">{{ why.domain.name }}</span>
+                                    {% if why.is_non_negotiable %}<span class="badge badge-non-negotiable small">Non-Negotiable</span>{% endif %}
+                                </li>
+                            {% empty %}
+                                <li class="text-muted fst-italic">None recorded</li>
+                            {% endfor %}
+                        </ul>
+
+                        <div class="small fw-semibold text-muted mb-1">Objectives Advanced:</div>
+                        <ul class="list-unstyled small mb-0">
+                            {% for obj in decision.supporting_objectives.all %}
+                                <li class="mb-1">• {{ obj.title }} <span class="badge bg-light text-muted border small">{{ obj.primary_domain.name }}</span></li>
+                            {% empty %}
+                                <li class="text-muted fst-italic">None recorded</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card shadow-sm border h-100 border-start border-4 border-terracotta">
+                    <div class="card-header bg-transparent py-2">
+                        <span class="fw-bold text-terracotta">Competing Tensions / Costs</span>
+                    </div>
+                    <div class="card-body p-3">
+                        <div class="small fw-semibold text-muted mb-1">Conflicting Objectives:</div>
+                        <ul class="list-unstyled small mb-0">
+                            {% for obj in decision.conflicting_objectives.all %}
+                                <li class="mb-1 text-danger">• {{ obj.title }} <span class="badge bg-light text-muted border small">{{ obj.primary_domain.name }}</span></li>
+                            {% empty %}
+                                <li class="text-muted fst-italic">No direct conflicts identified</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Qualitative Details -->
+        {% if decision.benefits_and_costs %}
+            <div class="card shadow-sm border mb-3">
+                <div class="card-header bg-transparent py-2 fw-semibold">Benefits & Costs / Trade-offs</div>
+                <div class="card-body p-3 small">{{ decision.benefits_and_costs|linebreaks }}</div>
+            </div>
+        {% endif %}
+
+        {% if decision.alternatives_considered %}
+            <div class="card shadow-sm border mb-3">
+                <div class="card-header bg-transparent py-2 fw-semibold">Alternatives Considered</div>
+                <div class="card-body p-3 small">{{ decision.alternatives_considered|linebreaks }}</div>
+            </div>
+        {% endif %}
+
+        {% if decision.unresolved_questions %}
+            <div class="card shadow-sm border mb-3">
+                <div class="card-header bg-transparent py-2 fw-semibold">Unresolved Questions</div>
+                <div class="card-body p-3 small">{{ decision.unresolved_questions|linebreaks }}</div>
+            </div>
+        {% endif %}
+
+        {% if decision.decision_outcome %}
+            <div class="card shadow-sm border mb-4 bg-light">
+                <div class="card-header bg-transparent py-2 fw-bold text-terracotta">Final Outcome & Reasoning</div>
+                <div class="card-body p-3 small">{{ decision.decision_outcome|linebreaks }}</div>
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- Right Column: LLM Thinking Partner & Sounding Board -->
+    <div class="col-lg-5">
+        <div class="card llm-thinking-partner shadow-sm mb-4">
+            <div class="card-header bg-transparent py-3 d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 text-sage d-flex align-items-center">
+                    <span class="me-2">💡</span>
+                    <span>Thinking Partner</span>
+                </h5>
+                <span class="badge bg-light text-muted border small">BYOK LLM</span>
+            </div>
+            <div class="card-body p-3">
+                <p class="text-muted small">
+                    Ask your configured LLM partner to examine hidden assumptions, explore trade-offs between domains, or propose alternative options.
+                </p>
+
+                {% if llm_config and llm_config.consent_given and llm_config.provider != 'none' %}
+                    <form method="post" action="{% url 'decisions:decision_reflect' decision.id %}">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <textarea name="prompt" rows="3" class="form-control form-control-sm" placeholder="e.g. What trade-offs am I overlooking between family and career? What alternatives might serve both?"></textarea>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="small text-muted">Using: <code>{{ llm_config.provider }}</code></span>
+                            <button type="submit" class="btn btn-sm btn-primary bg-sage border-0">Analyze Tensions</button>
+                        </div>
+                    </form>
+                {% else %}
+                    <div class="alert alert-secondary small mb-0">
+                        LLM Thinking Partner is unconfigured or consent is pending.
+                        <a href="{% url 'accounts:settings' %}" class="text-terracotta">Configure Ollama or OpenRouter in Settings</a>.
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Saved Reflections -->
+        {% for reflection in decision.reflections.all %}
+            <div class="card shadow-sm border mb-3">
+                <div class="card-header bg-transparent py-2 d-flex justify-content-between align-items-center small">
+                    <span class="fw-semibold">Reflection {{ reflection.created_at|date:"M d, H:i" }}</span>
+                    <span class="badge bg-light text-muted border small">{{ reflection.provider_used }}</span>
+                </div>
+                <div class="card-body p-3 small">
+                    <div class="fw-bold mb-2">Prompt: {{ reflection.user_prompt }}</div>
+                    <div class="p-2 rounded bg-light border" style="white-space: pre-wrap;">{{ reflection.llm_response }}</div>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

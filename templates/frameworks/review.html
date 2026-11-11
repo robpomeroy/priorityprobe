@@ -1,0 +1,129 @@
+{% extends 'base.html' %}
+{% block title %}Periodic Review — PrioritySuite{% endblock %}
+
+{% block content %}
+<div class="row mb-4 align-items-center">
+    <div class="col-md-8">
+        <h2 class="text-terracotta mb-1">Periodic Review</h2>
+        <p class="text-muted small mb-0">Examine enduring Whys, update status of Objectives, and review practical Goals.</p>
+    </div>
+    <div class="col-md-4 text-md-end mt-3 mt-md-0">
+        <div class="btn-group btn-group-sm">
+            <a href="{% url 'frameworks:review' %}" class="btn {% if not status_filter %}btn-primary bg-terracotta{% else %}btn-outline-secondary{% endif %}">All</a>
+            <a href="{% url 'frameworks:review' %}?status=ACTIVE" class="btn {% if status_filter == 'ACTIVE' %}btn-primary bg-terracotta{% else %}btn-outline-secondary{% endif %}">Active</a>
+            <a href="{% url 'frameworks:review' %}?status=PAUSED" class="btn {% if status_filter == 'PAUSED' %}btn-primary bg-terracotta{% else %}btn-outline-secondary{% endif %}">Paused</a>
+            <a href="{% url 'frameworks:review' %}?status=COMPLETED" class="btn {% if status_filter == 'COMPLETED' %}btn-primary bg-terracotta{% else %}btn-outline-secondary{% endif %}">Completed</a>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Whys -->
+    <div class="col-lg-4">
+        <div class="card shadow-sm h-100 border">
+            <div class="card-header bg-transparent py-3">
+                <h5 class="mb-0 text-amber">Whys & Reasons</h5>
+            </div>
+            <div class="card-body p-3">
+                {% for why in whys %}
+                    <div class="card card-why p-3 mb-3 border">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <span class="badge bg-light text-muted border small">{{ why.domain.name }}</span>
+                            <div id="review-why-{{ why.id }}">
+                                {% if why.last_reviewed_at %}
+                                    <span class="badge bg-sage text-white small">Reviewed {{ why.last_reviewed_at }}</span>
+                                {% else %}
+                                    <form method="post" action="{% url 'frameworks:mark_reviewed' 'why' why.id %}" hx-post="{% url 'frameworks:mark_reviewed' 'why' why.id %}" hx-target="#review-why-{{ why.id }}">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-outline-secondary btn-sm py-0 px-1 small">Mark Reviewed</button>
+                                    </form>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="fw-semibold mt-2">{{ why.title }}</div>
+                        {% if why.description %}
+                            <div class="text-muted small mt-1">{{ why.description }}</div>
+                        {% endif %}
+                    </div>
+                {% empty %}
+                    <div class="text-muted small">No Whys available.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Objectives -->
+    <div class="col-lg-4">
+        <div class="card shadow-sm h-100 border">
+            <div class="card-header bg-transparent py-3">
+                <h5 class="mb-0 text-sage">Objectives</h5>
+            </div>
+            <div class="card-body p-3">
+                {% for obj in objectives %}
+                    <div class="card card-objective p-3 mb-3 border">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <span class="badge bg-light text-muted border small">{{ obj.primary_domain.name }}</span>
+                            <div id="review-obj-{{ obj.id }}">
+                                {% if obj.last_reviewed_at %}
+                                    <span class="badge bg-sage text-white small">Reviewed {{ obj.last_reviewed_at }}</span>
+                                {% else %}
+                                    <form method="post" action="{% url 'frameworks:mark_reviewed' 'objective' obj.id %}" hx-post="{% url 'frameworks:mark_reviewed' 'objective' obj.id %}" hx-target="#review-obj-{{ obj.id }}">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-outline-secondary btn-sm py-0 px-1 small">Mark Reviewed</button>
+                                    </form>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="fw-semibold mt-2 d-flex justify-content-between">
+                            <span>{{ obj.title }}</span>
+                            <span class="badge bg-secondary-subtle text-secondary small">{{ obj.get_status_display }}</span>
+                        </div>
+                        {% if obj.description %}
+                            <div class="text-muted small mt-1">{{ obj.description }}</div>
+                        {% endif %}
+                    </div>
+                {% empty %}
+                    <div class="text-muted small">No Objectives match filter.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Goals -->
+    <div class="col-lg-4">
+        <div class="card shadow-sm h-100 border">
+            <div class="card-header bg-transparent py-3">
+                <h5 class="mb-0 text-terracotta">Goals</h5>
+            </div>
+            <div class="card-body p-3">
+                {% for goal in goals %}
+                    <div class="card card-goal p-3 mb-3 border">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <span class="badge bg-light text-muted border small">{{ goal.primary_domain.name }}</span>
+                            <div id="review-goal-{{ goal.id }}">
+                                {% if goal.last_reviewed_at %}
+                                    <span class="badge bg-sage text-white small">Reviewed {{ goal.last_reviewed_at }}</span>
+                                {% else %}
+                                    <form method="post" action="{% url 'frameworks:mark_reviewed' 'goal' goal.id %}" hx-post="{% url 'frameworks:mark_reviewed' 'goal' goal.id %}" hx-target="#review-goal-{{ goal.id }}">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-outline-secondary btn-sm py-0 px-1 small">Mark Reviewed</button>
+                                    </form>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="fw-semibold mt-2 d-flex justify-content-between">
+                            <span>{{ goal.title }}</span>
+                            <span class="badge bg-primary-subtle text-primary small">{{ goal.get_status_display }}</span>
+                        </div>
+                        {% if goal.target_date %}
+                            <div class="small text-muted mt-1">📅 Target: {{ goal.target_date }}</div>
+                        {% endif %}
+                    </div>
+                {% empty %}
+                    <div class="text-muted small">No Goals match filter.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

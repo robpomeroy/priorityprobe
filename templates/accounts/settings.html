@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% block title %}Settings & LLM BYOK — PrioritySuite{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card shadow-sm border mb-4">
+            <div class="card-header bg-transparent py-3">
+                <h5 class="mb-0 text-terracotta">LLM Thinking Partner (BYOK) & Preferences</h5>
+            </div>
+            <div class="card-body p-4">
+                <p class="text-muted small">
+                    PrioritySuite is designed to work completely offline without an LLM. If you choose to enable an AI thinking partner, it operates strictly as a non-prescriptive facilitator. API keys are encrypted at rest.
+                </p>
+
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">LLM Provider</label>
+                            {{ form.provider }}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Model Identifier</label>
+                            {{ form.model_name }}
+                            <div class="form-text small">e.g. <code>ollama/llama3.1</code> or <code>openrouter/anthropic/claude-3.5-sonnet</code></div>
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label small fw-semibold">API Base URL</label>
+                            {{ form.api_base }}
+                            <div class="form-text small">Default for Ollama: <code>http://localhost:11434</code> | Default for OpenRouter: <code>https://openrouter.ai/api/v1</code></div>
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label small fw-semibold">API Key</label>
+                            {{ form.raw_api_key }}
+                            {% if config.api_key %}
+                                <div class="text-success small mt-1">✓ An encrypted API key is currently saved.</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Theme Mode</label>
+                            {{ form.theme_preference }}
+                        </div>
+
+                        <div class="col-12 mt-3">
+                            <div class="rounded border p-3" style="background-color: var(--bs-body-bg);">
+                                <div class="form-check m-0">
+                                    {{ form.consent_given }}
+                                    <label class="form-check-label small" for="{{ form.consent_given.id_for_label }}">
+                                        <strong>Explicit Consent:</strong> I agree to allow PrioritySuite to send excerpts of my selected framework data to my configured LLM provider when I request an AI reflection.
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 d-flex justify-content-between align-items-center">
+                        <button type="submit" class="btn btn-primary bg-terracotta">Save Settings</button>
+                        <a href="{% url 'accounts:delete_account' %}" class="btn btn-outline-danger btn-sm">Delete Account & Data</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

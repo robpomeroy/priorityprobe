@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }} — PrioritySuite{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center py-4">
+    <div class="col-md-7 col-lg-6">
+        <div class="card shadow-sm border">
+            <div class="card-header bg-transparent py-3">
+                <h5 class="mb-0 text-terracotta">{{ title }}</h5>
+            </div>
+            <div class="card-body p-4">
+                {% if guidance %}
+                    <div class="alert alert-secondary small mb-3 border-start border-4 border-sage" style="background-color: var(--bs-body-bg);">
+                        <strong>Thinking Prompt:</strong> {{ guidance }}
+                    </div>
+                {% endif %}
+
+                <form method="post">
+                    {% csrf_token %}
+                    {% for field in form %}
+                        <div class="mb-3">
+                            <label class="form-label small fw-semibold">{{ field.label }}</label>
+                            {{ field }}
+                            {% if field.help_text %}
+                                <div class="form-text small">{{ field.help_text }}</div>
+                            {% endif %}
+                            {% if field.errors %}
+                                <div class="text-danger small mt-1">{{ field.errors|striptags }}</div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                    <div class="d-flex justify-content-between mt-4">
+                        <button type="button" class="btn btn-outline-secondary" onclick="history.back()">Cancel</button>
+                        <button type="submit" class="btn btn-primary bg-terracotta">Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

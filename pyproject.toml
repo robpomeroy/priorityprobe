@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prioritysuite"
+version = "0.1.0"
+description = "Personal priorities and decision-making framework suite"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "Django>=5.0,<6.0",
+    "gunicorn>=21.0",
+    "cryptography>=42.0",
+    "litellm>=1.30.0",
+    "httpx>=0.27.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-django>=4.8",
+    "pytest-cov>=5.0",
+]
+prod = [
+    "mysqlclient>=2.2.0",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+python_files = ["tests.py", "test_*.py", "*_tests.py"]
+django_db_bench = false
+addopts = "-p no:cacheprovider"
+
+[tool.coverage.run]
+source = ["."]
+data_file = "C:/Users/rob/AppData/Local/Temp/.coverage_prioritysuite"
+omit = [
+    "manage.py",
+    "config/wsgi.py",
+    "config/asgi.py",
+    ".venv/*",
+    "tests/*",
+    "*/migrations/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]

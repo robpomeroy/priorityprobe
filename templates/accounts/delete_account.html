@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block title %}Delete Account — PrioritySuite{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center py-5">
+    <div class="col-md-6">
+        <div class="card border-danger shadow-sm">
+            <div class="card-header bg-danger text-white">
+                <h5 class="mb-0">Delete Account & All Personal Data</h5>
+            </div>
+            <div class="card-body p-4">
+                <p>Are you sure you want to permanently delete your PrioritySuite account?</p>
+                <div class="alert alert-warning small">
+                    <strong>Warning:</strong> This action cannot be undone. All your frameworks, domains, whys, objectives, goals, and decision records will be permanently removed.
+                </div>
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="d-flex justify-content-between mt-4">
+                        <a href="{% url 'accounts:settings' %}" class="btn btn-outline-secondary">Cancel</a>
+                        <button type="submit" class="btn btn-danger">Confirm Permanent Deletion</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
