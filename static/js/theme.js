@@ -1,7 +1,11 @@
 // Autumn Theme Toggle & Persistence
 (function() {
+    function getServerTheme() {
+        return document.documentElement.getAttribute('data-server-theme') || '';
+    }
+
     function getStoredTheme() {
-        return localStorage.getItem('prioritysuite-theme') || 'auto';
+        return localStorage.getItem('prioritysuite-theme');
     }
 
     function setStoredTheme(theme) {
@@ -13,11 +17,15 @@
         if (stored && stored !== 'auto') {
             return stored;
         }
+        const server = getServerTheme();
+        if (server && server !== 'auto') {
+            return server;
+        }
         return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     }
 
     function applyTheme(theme) {
-        const effectiveTheme = (theme === 'auto') ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme;
+        const effectiveTheme = (theme === 'auto' || !theme) ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme;
         document.documentElement.setAttribute('data-bs-theme', effectiveTheme);
         const icon = document.getElementById('theme-toggle-icon');
         const text = document.getElementById('theme-toggle-text');
@@ -39,7 +47,7 @@
     };
 
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-        if (getStoredTheme() === 'auto') {
+        if (!getStoredTheme() || getStoredTheme() === 'auto') {
             applyTheme('auto');
         }
     });

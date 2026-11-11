@@ -42,6 +42,17 @@ def generate_reflection(
     if provider == "none" or not model_name:
         return False, "LLM integration is currently disabled or unconfigured in your settings."
 
+    # Validate api_base to prevent SSRF
+    if api_base:
+        from urllib.parse import urlparse
+        parsed = urlparse(api_base)
+        hostname = (parsed.hostname or "").lower()
+        if hostname in ("169.254.169.254", "metadata.google.internal") or parsed.scheme not in ("http", "https"):
+            return False, "Invalid API base URL: access to cloud metadata endpoints is prohibited."
+        if provider == "openrouter":
+            if hostname not in ("openrouter.ai", "www.openrouter.ai") or parsed.scheme != "https":
+                return False, "OpenRouter API base must use HTTPS and point to openrouter.ai."
+
     # Format messages
     messages = [
         {"role": "system", "content": SYSTEM_FACILITATOR_PROMPT},

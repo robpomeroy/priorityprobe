@@ -29,6 +29,9 @@
                         <div class="col-12">
                             <label class="form-label small fw-semibold">API Base URL</label>
                             {{ form.api_base }}
+                            {% if form.api_base.errors %}
+                                <div class="text-danger small mt-1">{{ form.api_base.errors|striptags }}</div>
+                            {% endif %}
                             <div class="form-text small">Default for Ollama: <code>http://localhost:11434</code> | Default for OpenRouter: <code>https://openrouter.ai/api/v1</code></div>
                         </div>
 

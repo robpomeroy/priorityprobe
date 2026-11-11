@@ -131,5 +131,7 @@ def seed_sample_framework(user) -> Framework:
 
 def remove_sample_frameworks(user) -> int:
     """Removes all sample frameworks and items owned by the user."""
-    deleted_count, _ = Framework.objects.filter(owner=user, is_sample=True).delete()
-    return deleted_count
+    sample_frameworks = Framework.objects.filter(owner=user, is_sample=True)
+    count = sample_frameworks.count()
+    sample_frameworks.delete()
+    return count

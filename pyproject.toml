@@ -35,7 +35,7 @@ addopts = "-p no:cacheprovider"
 
 [tool.coverage.run]
 source = ["."]
-data_file = "C:/Users/rob/AppData/Local/Temp/.coverage_prioritysuite"
+data_file = ".coverage"
 omit = [
     "manage.py",
     "config/wsgi.py",

@@ -26,7 +26,7 @@ Domains ➔ Whys ➔ Objectives ➔ Goals
 ## 3. Getting Started
 
 ### 3.1 Account Creation & Privacy
-PrioritySuite is private by default. When you sign up, your framework is strictly isolated to your user account. No other user or administrator can view your priorities or decisions.
+PrioritySuite is private by default. When you sign up, your framework is strictly isolated to your user account, preventing other regular users from viewing or modifying your priorities or decisions. (System administrators operating the database or backend have server-level access as with any hosted web service).
 
 ### 3.2 Workspace & Sample Content
 Upon first logging in, you will be taken to your **Workspace**:

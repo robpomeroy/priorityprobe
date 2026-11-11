@@ -91,7 +91,8 @@ def decision_reflect_view(request, decision_id):
             messages.error(request, "Please grant consent in LLM Settings before querying external providers.")
             return redirect("accounts:settings")
 
-        user_prompt = request.POST.get("prompt", "Analyze the cross-domain tensions, trade-offs, and alternatives in this proposed decision.")
+        raw_prompt = request.POST.get("prompt", "")
+        user_prompt = raw_prompt.strip() if raw_prompt and raw_prompt.strip() else "Analyze the cross-domain tensions, trade-offs, and alternatives in this proposed decision."
         context_md = generate_decision_markdown(decision)
 
         success, response_text = generate_reflection(

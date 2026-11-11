@@ -5,10 +5,10 @@ services:
     image: mariadb:11.4
     restart: always
     environment:
-      MYSQL_DATABASE: prioritysuite
-      MYSQL_USER: prioritysuite
-      MYSQL_PASSWORD: prioritysuite_secret_password
-      MYSQL_ROOT_PASSWORD: root_secret_password
+      MYSQL_DATABASE: ${DB_NAME:-prioritysuite}
+      MYSQL_USER: ${DB_USER:-prioritysuite}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD must be set in .env}
     volumes:
       - mariadb_data:/var/lib/mysql
     networks:
@@ -18,20 +18,22 @@ services:
     build: .
     restart: always
     environment:
-      DJANGO_SECRET_KEY: change-this-in-production-random-secure-string
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?DJANGO_SECRET_KEY must be set in .env}
       DEBUG: "False"
-      ALLOWED_HOSTS: localhost,127.0.0.1,web
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:?ALLOWED_HOSTS must be set in .env}
       DATABASE_ENGINE: mysql
-      DB_NAME: prioritysuite
-      DB_USER: prioritysuite
-      DB_PASSWORD: prioritysuite_secret_password
+      DB_NAME: ${DB_NAME:-prioritysuite}
+      DB_USER: ${DB_USER:-prioritysuite}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
       DB_HOST: db
       DB_PORT: 3306
-      ENCRYPTION_KEY: ""
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
     depends_on:
       - db
     expose:
       - "8000"
+    volumes:
+      - static_volume:/app/staticfiles
     networks:
       - prioritysuite_net
 
