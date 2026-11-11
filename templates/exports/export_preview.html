@@ -9,13 +9,62 @@
                 <h4 class="mb-0 text-terracotta">{{ title }}</h4>
                 <div>
                     <button class="btn btn-sm btn-outline-secondary me-2" onclick="navigator.clipboard.writeText(document.getElementById('md-content').value); alert('Copied to clipboard!')">Copy Markdown</button>
-                    <a href="?download=1" class="btn btn-sm btn-primary bg-terracotta">Download .md File</a>
+                    <a href="{{ download_url|default:'?download=1' }}" class="btn btn-sm btn-primary bg-terracotta">Download .md File</a>
                 </div>
             </div>
             <div class="card-body p-4">
                 <p class="text-muted small">
                     This Markdown document includes your structured priorities along with complete facilitator instructions. You can paste it directly into ChatGPT, Claude, Gemini, or any local LLM to use as an external thinking partner.
                 </p>
+
+                {% if all_domains %}
+                <!-- Custom Export Builder Controls -->
+                <div class="card bg-light border p-3 mb-3">
+                    <form method="get" class="small">
+                        <div class="fw-bold text-muted mb-2">Customize Export Bundle:</div>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold text-muted mb-1">Domains to Include:</label>
+                                <div class="d-flex flex-wrap gap-2">
+                                    {% for d in all_domains %}
+                                        <div class="form-check form-check-inline border rounded px-2 py-1 bg-white">
+                                            <input class="form-check-input ms-0 me-1" type="checkbox" name="domains" value="{{ d.id }}" id="exp-d-{{ d.id }}" {% if d.id in selected_domain_ids %}checked{% endif %}>
+                                            <label class="form-check-label" for="exp-d-{{ d.id }}">{{ d.name }}</label>
+                                        </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+
+                            {% if all_decisions %}
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold text-muted mb-1">Decision Assessments:</label>
+                                <div class="d-flex flex-wrap gap-2">
+                                    {% for dec in all_decisions %}
+                                        <div class="form-check form-check-inline border rounded px-2 py-1 bg-white">
+                                            <input class="form-check-input ms-0 me-1" type="checkbox" name="decisions" value="{{ dec.id }}" id="exp-dec-{{ dec.id }}" {% if dec.id in selected_decision_ids %}checked{% endif %}>
+                                            <label class="form-check-label" for="exp-dec-{{ dec.id }}">{{ dec.title }}</label>
+                                        </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% endif %}
+
+                            <div class="col-12 d-flex flex-wrap gap-3 align-items-center pt-1">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="instructions" value="1" id="exp-inst" {% if include_instructions %}checked{% endif %}>
+                                    <label class="form-check-label" for="exp-inst">Include LLM Facilitator Instructions Header</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="reflections" value="1" id="exp-ref" {% if include_reflections %}checked{% endif %}>
+                                    <label class="form-check-label" for="exp-ref">Include Recent Thinking Partner Reflections</label>
+                                </div>
+                                <button type="submit" class="btn btn-sm btn-outline-dark ms-auto">Update Preview</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                {% endif %}
+
                 <div class="mb-3">
                     <textarea id="md-content" class="form-control font-monospace small" rows="20" readonly>{{ markdown_content }}</textarea>
                 </div>

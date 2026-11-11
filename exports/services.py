@@ -2,7 +2,13 @@ from frameworks.models import Framework, Domain, Why, Objective, Goal
 from decisions.models import DecisionRecord
 from llm.service import SYSTEM_FACILITATOR_PROMPT
 
-def generate_framework_markdown(framework: Framework, include_instructions: bool = True, selected_domain_ids: list = None) -> str:
+def generate_framework_markdown(
+    framework: Framework,
+    include_instructions: bool = True,
+    selected_domain_ids: list = None,
+    selected_decision_ids: list = None,
+    include_reflections: bool = False,
+) -> str:
     """Generates clean Markdown for a user's framework, including prompt instructions for external LLMs."""
     lines = []
 
@@ -67,6 +73,38 @@ def generate_framework_markdown(framework: Framework, include_instructions: bool
             lines.append("")
 
         lines.append("---")
+
+    # Optional selected decision assessments
+    if selected_decision_ids:
+        decs = DecisionRecord.objects.filter(id__in=selected_decision_ids, framework=framework).prefetch_related(
+            "affected_domains", "relevant_whys", "supporting_objectives", "conflicting_objectives"
+        )
+        if decs.exists():
+            lines.append("\n# Cross-Domain Decision Assessments\n")
+            for dec in decs:
+                lines.append(f"## Decision: {dec.title}")
+                lines.append(f"**Status:** {dec.get_status_display()}")
+                lines.append(f"\n**Proposal / Opportunity:**\n{dec.proposal_description}\n")
+                if dec.benefits_and_costs:
+                    lines.append(f"**Benefits and Costs Considered:**\n{dec.benefits_and_costs}\n")
+                if dec.unresolved_questions:
+                    lines.append(f"**Unresolved Questions & Assumptions:**\n{dec.unresolved_questions}\n")
+                if dec.decision_outcome:
+                    lines.append(f"**Outcome / Decision Made:**\n{dec.decision_outcome}\n")
+                lines.append("---")
+
+    # Optional saved thinking partner reflections
+    if include_reflections:
+        from decisions.models import LLMReflectionLog
+        refs = LLMReflectionLog.objects.filter(framework=framework, decision__isnull=True).order_by("-created_at")[:5]
+        if refs.exists():
+            lines.append("\n# Saved Thinking Partner Reflections\n")
+            for r in refs:
+                date_str = r.created_at.strftime('%Y-%m-%d') if r.created_at else "Undated"
+                lines.append(f"### Reflection ({date_str})")
+                lines.append(f"**Prompt:** {r.user_prompt}")
+                lines.append(f"\n{r.llm_response}\n")
+                lines.append("---")
 
     return "\n".join(lines)
 

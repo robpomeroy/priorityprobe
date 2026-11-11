@@ -48,3 +48,30 @@ def delete_account_view(request):
         messages.info(request, "Your account and all associated frameworks and decisions have been completely deleted from PrioritySuite.")
         return redirect("accounts:login")
     return render(request, "accounts/delete_account.html")
+
+@login_required
+def test_llm_connection_view(request):
+    if request.method != "POST":
+        return redirect("accounts:settings")
+    config = getattr(request.user, "llm_config", None)
+    if not config or config.provider == "none" or not config.model_name:
+        messages.warning(request, "Please configure an active LLM provider before testing.")
+        return redirect("accounts:settings")
+    if not config.consent_given:
+        messages.warning(request, "Consent must be granted before connecting to external LLMs.")
+        return redirect("accounts:settings")
+
+    from llm.service import generate_reflection
+    success, response_text = generate_reflection(
+        user_context_markdown="Ping test connection from PrioritySuite settings.",
+        user_prompt="Reply with exactly: 'PrioritySuite thinking partner connection verified.'",
+        provider=config.provider,
+        model_name=config.model_name,
+        api_key=config.api_key,
+        api_base=config.api_base,
+    )
+    if success:
+        messages.success(request, f"Connection verified successfully! ({config.provider}: {config.model_name})")
+    else:
+        messages.error(request, f"Connection failed: {response_text}")
+    return redirect("accounts:settings")

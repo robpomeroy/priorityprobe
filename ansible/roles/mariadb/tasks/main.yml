@@ -1,0 +1,35 @@
+---
+- name: Install MariaDB server packages
+  ansible.builtin.dnf:
+    name:
+      - mariadb-server
+      - python3-PyMySQL
+    state: present
+
+- name: Enable and start MariaDB service
+  ansible.builtin.systemd:
+    name: mariadb
+    state: started
+    enabled: true
+
+- name: Create PrioritySuite application database
+  community.mysql.mysql_db:
+    name: "{{ db_name }}"
+    state: present
+    login_user: root
+    login_unix_socket: /var/lib/mysql/mysql.sock
+    encoding: utf8mb4
+    collation: utf8mb4_unicode_ci
+
+- name: Create PrioritySuite database user with full schema privileges
+  community.mysql.mysql_user:
+    name: "{{ db_user }}"
+    password: "{{ db_password }}"
+    priv: "{{ db_name }}.*:ALL"
+    host: "{{ item }}"
+    state: present
+    login_user: root
+    login_unix_socket: /var/lib/mysql/mysql.sock
+  loop:
+    - "127.0.0.1"
+    - "localhost"

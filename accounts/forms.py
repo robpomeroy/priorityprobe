@@ -8,7 +8,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from accounts.models import UserLLMConfig
 
-ALLOWED_PROVIDERS = {"ollama", "openrouter", "none"}
+ALLOWED_PROVIDERS = {"ollama", "openrouter", "openai", "anthropic", "gemini", "custom", "none"}
 
 def is_safe_ollama_endpoint(hostname: str) -> bool:
     """
@@ -66,10 +66,28 @@ def validate_llm_api_base(provider: str, api_base: str):
             raise ValidationError("OpenRouter API Base must point to openrouter.ai (e.g. https://openrouter.ai/api/v1).")
         if parsed.scheme != "https":
             raise ValidationError("OpenRouter connections must use HTTPS.")
-    
-    elif provider == "ollama":
+
+    elif provider == "openai":
+        if hostname not in ("api.openai.com",):
+            raise ValidationError("OpenAI API Base must point to api.openai.com (e.g. https://api.openai.com/v1).")
+        if parsed.scheme != "https":
+            raise ValidationError("OpenAI connections must use HTTPS.")
+
+    elif provider == "anthropic":
+        if hostname not in ("api.anthropic.com",):
+            raise ValidationError("Anthropic API Base must point to api.anthropic.com (e.g. https://api.anthropic.com/v1).")
+        if parsed.scheme != "https":
+            raise ValidationError("Anthropic connections must use HTTPS.")
+
+    elif provider == "gemini":
+        if hostname not in ("generativelanguage.googleapis.com",):
+            raise ValidationError("Google Gemini API Base must point to generativelanguage.googleapis.com.")
+        if parsed.scheme != "https":
+            raise ValidationError("Gemini connections must use HTTPS.")
+
+    elif provider in ("ollama", "custom"):
         if not is_safe_ollama_endpoint(hostname):
-            raise ValidationError("Disallowed Ollama destination: private, link-local, or unresolvable internal hostnames are prohibited.")
+            raise ValidationError(f"Disallowed {provider} destination: private, link-local, or unresolvable internal hostnames are prohibited.")
 
     return api_base
 

@@ -1,0 +1,43 @@
+---
+- name: Fast Application Update for PrioritySuite
+  hosts: prioritysuite_servers
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Pull latest code from repository
+      ansible.builtin.git:
+        repo: "{{ app_repo }}"
+        dest: "{{ app_root }}"
+        version: "{{ app_version }}"
+        force: true
+      become_user: "{{ app_user }}"
+
+    - name: Install and update Python virtualenv dependencies
+      ansible.builtin.pip:
+        requirements: "{{ app_root }}/requirements.txt"
+        virtualenv: "{{ app_root }}/.venv"
+        virtualenv_command: /usr/bin/python3 -m venv
+      become_user: "{{ app_user }}"
+
+    - name: Run database schema migrations
+      ansible.builtin.command:
+        cmd: "{{ app_root }}/.venv/bin/python manage.py migrate --no-input"
+        chdir: "{{ app_root }}"
+      become_user: "{{ app_user }}"
+      environment:
+        DJANGO_SETTINGS_MODULE: "config.settings"
+
+    - name: Collect static files
+      ansible.builtin.command:
+        cmd: "{{ app_root }}/.venv/bin/python manage.py collectstatic --no-input"
+        chdir: "{{ app_root }}"
+      become_user: "{{ app_user }}"
+      environment:
+        DJANGO_SETTINGS_MODULE: "config.settings"
+
+    - name: Restart PrioritySuite Gunicorn service
+      ansible.builtin.systemd:
+        name: "{{ app_name }}"
+        state: restarted
+        daemon_reload: true

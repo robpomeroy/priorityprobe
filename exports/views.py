@@ -17,20 +17,55 @@ def sanitize_filename(name: str, fallback: str = "export") -> str:
 @login_required
 def export_framework_view(request, framework_id):
     framework = get_object_or_404(Framework, id=framework_id, owner=request.user)
-    include_instructions = request.GET.get("instructions", "1") == "1"
-    md_content = generate_framework_markdown(framework, include_instructions=include_instructions)
+    include_instructions = request.GET.get("instructions", "1") != "0"
+    include_reflections = request.GET.get("reflections") == "1"
 
-    if request.GET.get("download"):
+    all_domains = framework.domains.all()
+    all_decisions = DecisionRecord.objects.filter(framework=framework)
+
+    selected_domain_raw = request.GET.getlist("domains")
+    selected_decision_raw = request.GET.getlist("decisions")
+
+    try:
+        selected_domain_ids = [int(x) for x in selected_domain_raw if str(x).isdigit()]
+    except (ValueError, TypeError):
+        selected_domain_ids = []
+
+    try:
+        selected_decision_ids = [int(x) for x in selected_decision_raw if str(x).isdigit()]
+    except (ValueError, TypeError):
+        selected_decision_ids = []
+
+    md_content = generate_framework_markdown(
+        framework,
+        include_instructions=include_instructions,
+        selected_domain_ids=selected_domain_ids if selected_domain_ids else None,
+        selected_decision_ids=selected_decision_ids if selected_decision_ids else None,
+        include_reflections=include_reflections,
+    )
+
+    if request.GET.get("download") == "1":
         response = HttpResponse(md_content, content_type="text/markdown; charset=utf-8")
         safe_name = sanitize_filename(framework.name, "framework")
         filename = f"prioritysuite_{safe_name}.md"
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
 
+    # Build query string for download link keeping all filters
+    download_query = request.GET.copy()
+    download_query["download"] = "1"
+
     return render(request, "exports/export_preview.html", {
         "title": f"Markdown Export: {framework.name}",
         "markdown_content": md_content,
         "framework": framework,
+        "all_domains": all_domains,
+        "all_decisions": all_decisions,
+        "selected_domain_ids": selected_domain_ids or list(all_domains.values_list("id", flat=True)),
+        "selected_decision_ids": selected_decision_ids,
+        "include_instructions": include_instructions,
+        "include_reflections": include_reflections,
+        "download_url": f"?{download_query.urlencode()}",
     })
 
 @login_required
@@ -38,7 +73,7 @@ def export_decision_view(request, decision_id):
     decision = get_object_or_404(DecisionRecord, id=decision_id, framework__owner=request.user)
     md_content = generate_decision_markdown(decision)
 
-    if request.GET.get("download"):
+    if request.GET.get("download") == "1":
         response = HttpResponse(md_content, content_type="text/markdown; charset=utf-8")
         safe_title = sanitize_filename(decision.title, "decision")
         filename = f"decision_{safe_title}.md"

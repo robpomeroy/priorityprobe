@@ -213,10 +213,95 @@ def goal_delete_view(request, goal_id):
         return redirect("frameworks:workspace_detail", framework_id=fw_id)
     return render(request, "frameworks/confirm_delete.html", {"item_type": "Goal", "item_name": goal.title})
 
+from datetime import timedelta
+
+@login_required
+def domain_move_view(request, domain_id, direction):
+    if request.method != "POST":
+        return HttpResponseForbidden()
+    domain = get_object_or_404(Domain, id=domain_id, framework__owner=request.user)
+    fw = domain.framework
+    all_domains = list(fw.domains.order_by("display_order", "id"))
+    idx = all_domains.index(domain)
+
+    if direction == "up" and idx > 0:
+        prev_domain = all_domains[idx - 1]
+        domain.display_order, prev_domain.display_order = prev_domain.display_order, domain.display_order
+        if domain.display_order == prev_domain.display_order:
+            domain.display_order -= 1
+        domain.save()
+        prev_domain.save()
+    elif direction == "down" and idx < len(all_domains) - 1:
+        next_domain = all_domains[idx + 1]
+        domain.display_order, next_domain.display_order = next_domain.display_order, domain.display_order
+        if domain.display_order == next_domain.display_order:
+            domain.display_order += 1
+        domain.save()
+        next_domain.save()
+
+    return redirect("frameworks:workspace_detail", framework_id=fw.id)
+
+@login_required
+def why_move_view(request, why_id, direction):
+    if request.method != "POST":
+        return HttpResponseForbidden()
+    why = get_object_or_404(Why, id=why_id, domain__framework__owner=request.user)
+    all_whys = list(why.domain.whys.order_by("display_order", "id"))
+    idx = all_whys.index(why)
+
+    if direction == "up" and idx > 0:
+        prev_why = all_whys[idx - 1]
+        why.display_order, prev_why.display_order = prev_why.display_order, why.display_order
+        if why.display_order == prev_why.display_order:
+            why.display_order -= 1
+        why.save()
+        prev_why.save()
+    elif direction == "down" and idx < len(all_whys) - 1:
+        next_why = all_whys[idx + 1]
+        why.display_order, next_why.display_order = next_why.display_order, why.display_order
+        if why.display_order == next_why.display_order:
+            why.display_order += 1
+        why.save()
+        next_why.save()
+
+    return redirect("frameworks:workspace_detail", framework_id=why.domain.framework_id)
+
+@login_required
+def objective_status_view(request, objective_id):
+    if request.method != "POST":
+        return HttpResponseForbidden()
+    obj = get_object_or_404(Objective, id=objective_id, primary_domain__framework__owner=request.user)
+    new_status = request.POST.get("status")
+    if new_status in StatusChoices.values:
+        obj.status = new_status
+        obj.save()
+        messages.success(request, f"Objective status changed to {obj.get_status_display()}.")
+    next_url = request.POST.get("next") or request.META.get("HTTP_REFERER")
+    if next_url:
+        return redirect(next_url)
+    return redirect("frameworks:workspace_detail", framework_id=obj.primary_domain.framework_id)
+
+@login_required
+def goal_status_view(request, goal_id):
+    if request.method != "POST":
+        return HttpResponseForbidden()
+    goal = get_object_or_404(Goal, id=goal_id, primary_domain__framework__owner=request.user)
+    new_status = request.POST.get("status")
+    if new_status in StatusChoices.values:
+        goal.status = new_status
+        goal.save()
+        messages.success(request, f"Goal status changed to {goal.get_status_display()}.")
+    next_url = request.POST.get("next") or request.META.get("HTTP_REFERER")
+    if next_url:
+        return redirect(next_url)
+    return redirect("frameworks:workspace_detail", framework_id=goal.primary_domain.framework_id)
+
 @login_required
 def review_view(request, framework_id=None):
     framework = _get_user_framework(request.user, framework_id)
     status_filter = request.GET.get("status", "")
+    age_filter = request.GET.get("age", "")
+    today = timezone.now().date()
     
     whys = Why.objects.filter(domain__framework=framework).select_related("domain")
     objectives = Objective.objects.filter(primary_domain__framework=framework).select_related("primary_domain")
@@ -226,14 +311,38 @@ def review_view(request, framework_id=None):
         objectives = objectives.filter(status=status_filter)
         goals = goals.filter(status=status_filter)
 
+    if age_filter == "never":
+        whys = whys.filter(last_reviewed_at__isnull=True)
+        objectives = objectives.filter(last_reviewed_at__isnull=True)
+        goals = goals.filter(last_reviewed_at__isnull=True)
+    elif age_filter in ("90", "180", "365"):
+        days = int(age_filter)
+        cutoff = today - timedelta(days=days)
+        whys = whys.filter(last_reviewed_at__isnull=False, last_reviewed_at__lt=cutoff)
+        objectives = objectives.filter(last_reviewed_at__isnull=False, last_reviewed_at__lt=cutoff)
+        goals = goals.filter(last_reviewed_at__isnull=False, last_reviewed_at__lt=cutoff)
+
     return render(request, "frameworks/review.html", {
         "framework": framework,
         "whys": whys,
         "objectives": objectives,
         "goals": goals,
         "status_filter": status_filter,
+        "age_filter": age_filter,
         "StatusChoices": StatusChoices,
     })
+
+@login_required
+def mark_all_reviewed_view(request, framework_id):
+    if request.method != "POST":
+        return HttpResponseForbidden()
+    framework = get_object_or_404(Framework, id=framework_id, owner=request.user)
+    today = timezone.now().date()
+    Why.objects.filter(domain__framework=framework).update(last_reviewed_at=today)
+    Objective.objects.filter(primary_domain__framework=framework).update(last_reviewed_at=today)
+    Goal.objects.filter(primary_domain__framework=framework).update(last_reviewed_at=today)
+    messages.success(request, f"Marked all framework items as reviewed on {today}.")
+    return redirect("frameworks:review_detail", framework_id=framework.id)
 
 @login_required
 def mark_reviewed_view(request, item_type, item_id):

@@ -1,0 +1,36 @@
+---
+# PrioritySuite Ansible Configuration for Oracle Linux / RHEL 9
+
+# Application Environment
+app_name: prioritysuite
+app_user: prioritysuite
+app_group: prioritysuite
+app_root: /var/www/prioritysuite
+app_repo: "https://github.com/robpomeroy/priorityprobe.git"
+app_version: "main"  # or specific branch/tag e.g. "feat-phase-1"
+
+# Domain & Web Proxy
+server_domain: "priorities.example.com"
+server_admin_email: "admin@example.com"
+enable_ssl: true
+ssl_cert_path: "/etc/pki/tls/certs/prioritysuite.crt"
+ssl_key_path: "/etc/pki/tls/private/prioritysuite.key"
+
+# Gunicorn
+gunicorn_bind: "127.0.0.1:8000"
+gunicorn_workers: 3
+
+# Database (MariaDB)
+db_name: prioritysuite
+db_user: prioritysuite
+db_password: "change_this_to_a_secure_database_password"
+db_host: "127.0.0.1"
+db_port: 3306
+
+# Security & Encryption
+django_secret_key: "generate-a-secure-random-50-character-secret-key-here"
+encryption_key: ""  # Optional 32-byte Fernet key; if blank, derived from secret key
+allowed_hosts: "{{ server_domain }},127.0.0.1,localhost"
+
+# Optional Ollama internal destination allowlist in production
+ollama_allowed_hosts: "localhost,127.0.0.1"

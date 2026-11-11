@@ -644,3 +644,476 @@ def test_user_llm_admin_add_and_ownership_enforcement(user, other_user):
     # Once other_user has a config, has_add_permission becomes False (OneToOne)
     assert llm_admin.has_add_permission(request) is False
 
+
+# --- 13. Phase 2 Enhancements Tests ---
+
+def test_domain_and_why_reordering(client, user, other_user, framework, domain):
+    from frameworks.models import Domain, Why
+    domain2 = Domain.objects.create(framework=framework, name="Second Domain", display_order=2)
+    client.force_login(user)
+
+    # Move domain 1 down
+    resp = client.post(f"/frameworks/domain/{domain.id}/move/down/")
+    assert resp.status_code == 302
+    domain.refresh_from_db()
+    domain2.refresh_from_db()
+    assert domain.display_order == 2
+    assert domain2.display_order == 1
+
+    # Move domain 1 down again (boundary test - already at bottom)
+    client.post(f"/frameworks/domain/{domain.id}/move/down/")
+    domain.refresh_from_db()
+    assert domain.display_order == 2
+
+    # Move domain 1 back up
+    client.post(f"/frameworks/domain/{domain.id}/move/up/")
+    domain.refresh_from_db()
+    domain2.refresh_from_db()
+    assert domain.display_order == 1
+    assert domain2.display_order == 2
+
+    # Boundary test up (already at top)
+    client.post(f"/frameworks/domain/{domain.id}/move/up/")
+    domain.refresh_from_db()
+    assert domain.display_order == 1
+
+    # Cross-user isolation on domain move
+    client.force_login(other_user)
+    resp_cross = client.post(f"/frameworks/domain/{domain.id}/move/down/")
+    assert resp_cross.status_code == 404
+
+    # Why reordering
+    client.force_login(user)
+    why1 = Why.objects.create(domain=domain, title="Why 1", display_order=1)
+    why2 = Why.objects.create(domain=domain, title="Why 2", display_order=2)
+
+    resp_why = client.post(f"/frameworks/why/{why1.id}/move/down/")
+    assert resp_why.status_code == 302
+    why1.refresh_from_db()
+    why2.refresh_from_db()
+    assert why1.display_order == 2
+    assert why2.display_order == 1
+
+    client.post(f"/frameworks/why/{why1.id}/move/up/")
+    why1.refresh_from_db()
+    assert why1.display_order == 1
+
+    # Cross-user isolation on why move
+    client.force_login(other_user)
+    assert client.post(f"/frameworks/why/{why1.id}/move/down/").status_code == 404
+
+
+def test_objective_and_goal_status_updates(client, user, other_user, objective, goal):
+    client.force_login(user)
+
+    # Update objective status
+    resp = client.post(f"/frameworks/objective/{objective.id}/status/", {
+        "status": StatusChoices.PAUSED,
+        "next": "/frameworks/workspace/"
+    })
+    assert resp.status_code == 302
+    objective.refresh_from_db()
+    assert objective.status == StatusChoices.PAUSED
+
+    # Invalid status is ignored
+    client.post(f"/frameworks/objective/{objective.id}/status/", {"status": "INVALID_STATUS"})
+    objective.refresh_from_db()
+    assert objective.status == StatusChoices.PAUSED
+
+    # Cross-user isolation on objective status
+    client.force_login(other_user)
+    resp_cross = client.post(f"/frameworks/objective/{objective.id}/status/", {"status": StatusChoices.ACTIVE})
+    assert resp_cross.status_code == 404
+
+    # Goal status update
+    client.force_login(user)
+    resp_goal = client.post(f"/frameworks/goal/{goal.id}/status/", {"status": StatusChoices.COMPLETED})
+    assert resp_goal.status_code == 302
+    goal.refresh_from_db()
+    assert goal.status == StatusChoices.COMPLETED
+
+    # Cross-user isolation on goal status
+    client.force_login(other_user)
+    assert client.post(f"/frameworks/goal/{goal.id}/status/", {"status": StatusChoices.ACTIVE}).status_code == 404
+
+
+def test_review_cadence_and_mark_all(client, user, framework, objective, goal):
+    from datetime import timedelta
+    from django.utils import timezone
+    client.force_login(user)
+
+    # Set initial review dates
+    objective.last_reviewed_at = (timezone.now() - timedelta(days=120)).date()
+    objective.save()
+    goal.last_reviewed_at = None
+    goal.save()
+
+    # Review page filtering
+    resp_never = client.get(f"/frameworks/review/{framework.id}/?age=never")
+    assert resp_never.status_code == 200
+    assert goal in resp_never.context["goals"]
+    assert objective not in resp_never.context["objectives"]
+
+    resp_90 = client.get(f"/frameworks/review/{framework.id}/?age=90")
+    assert resp_90.status_code == 200
+    assert objective in resp_90.context["objectives"]
+
+    resp_365 = client.get(f"/frameworks/review/{framework.id}/?age=365")
+    assert resp_365.status_code == 200
+    assert objective not in resp_365.context["objectives"]
+
+    # Mark all reviewed
+    resp_mark = client.post(f"/frameworks/review/{framework.id}/mark-all/")
+    assert resp_mark.status_code == 302
+    objective.refresh_from_db()
+    goal.refresh_from_db()
+    assert objective.last_reviewed_at == timezone.now().date()
+    assert goal.last_reviewed_at == timezone.now().date()
+
+
+def test_priority_comparison_view(client, user, framework, domain, objective, goal):
+    from frameworks.models import Domain, Why, Objective, Goal
+    client.force_login(user)
+
+    domain2 = Domain.objects.create(framework=framework, name="Health", display_order=2)
+    why2 = Why.objects.create(domain=domain2, title="Longevity & vitality", is_non_negotiable=True)
+    obj2 = Objective.objects.create(primary_domain=domain2, title="Consistent rest", status=StatusChoices.ACTIVE)
+    obj2.whys.add(why2)
+
+    # GET comparison view (objectives)
+    resp = client.get(f"/decisions/compare/{framework.id}/?type=objectives&selected={objective.id}&selected={obj2.id}")
+    assert resp.status_code == 200
+    assert resp.context["compare_type"] == "objectives"
+    assert objective in resp.context["items"]
+    assert obj2 in resp.context["items"]
+
+    # GET comparison view (goals)
+    goal2 = Goal.objects.create(primary_domain=domain2, title="Sleep 8 hours", status=StatusChoices.ACTIVE)
+    resp_goals = client.get(f"/decisions/compare/{framework.id}/?type=goals&selected={goal.id}&selected={goal2.id}")
+    assert resp_goals.status_code == 200
+    assert resp_goals.context["compare_type"] == "goals"
+    assert goal in resp_goals.context["items"]
+    assert goal2 in resp_goals.context["items"]
+
+    # POST action=convert_to_decision
+    resp_convert = client.post(f"/decisions/compare/{framework.id}/", {
+        "action": "convert_to_decision",
+        "type": "objectives",
+        "selected": [str(objective.id), str(obj2.id)],
+    })
+    assert resp_convert.status_code == 302
+    assert DecisionRecord.objects.filter(framework=framework, title__startswith="Priority Comparison").exists()
+
+    # POST action=reflect without consent redirects to settings
+    resp_no_consent = client.post(f"/decisions/compare/{framework.id}/", {
+        "action": "reflect",
+        "type": "objectives",
+        "selected": [str(objective.id), str(obj2.id)],
+    })
+    assert resp_no_consent.status_code == 302
+    assert resp_no_consent.url == "/accounts/settings/"
+
+    # Grant consent and test reflection
+    config, _ = UserLLMConfig.objects.get_or_create(user=user)
+    config.consent_given = True
+    config.provider = "ollama"
+    config.model_name = "llama3.1"
+    config.save()
+
+    with patch("decisions.views.generate_reflection", return_value=(True, "Comparison reflection from AI")):
+        resp_reflect = client.post(f"/decisions/compare/{framework.id}/", {
+            "action": "reflect",
+            "type": "objectives",
+            "selected": [str(objective.id), str(obj2.id)],
+            "prompt": "Evaluate trade-offs between craft and rest.",
+        })
+        assert resp_reflect.status_code == 200
+        assert resp_reflect.context["comparison_reflection"] == "Comparison reflection from AI"
+        assert LLMReflectionLog.objects.filter(framework=framework, llm_response="Comparison reflection from AI").exists()
+
+
+def test_llm_test_connection_endpoint(client, user):
+    client.force_login(user)
+
+    # 1. No consent -> 302 redirect to settings
+    resp_no_consent = client.post("/accounts/settings/test-llm/")
+    assert resp_no_consent.status_code == 302
+    assert resp_no_consent.url == "/accounts/settings/"
+
+    # 2. GET request redirects to settings
+    assert client.get("/accounts/settings/test-llm/").status_code == 302
+
+    # Set consent and LLM config
+    config, _ = UserLLMConfig.objects.get_or_create(user=user)
+    config.consent_given = True
+    config.provider = "ollama"
+    config.model_name = "llama3:latest"
+    config.api_base = "http://localhost:11434"
+    config.save()
+
+    # 3. Successful test
+    with patch("llm.service.generate_reflection", return_value=(True, "PrioritySuite thinking partner connection verified.")):
+        resp_ok = client.post("/accounts/settings/test-llm/")
+        assert resp_ok.status_code == 302
+        assert resp_ok.url == "/accounts/settings/"
+
+    # 4. Connection error test
+    with patch("llm.service.generate_reflection", return_value=(False, "Connection refused")):
+        resp_err = client.post("/accounts/settings/test-llm/")
+        assert resp_err.status_code == 302
+        assert resp_err.url == "/accounts/settings/"
+
+
+def test_selective_markdown_export_builder(client, user, framework, domain, objective, goal):
+    from frameworks.models import Domain, Why
+    domain2 = Domain.objects.create(framework=framework, name="Finance", display_order=2)
+    dec = DecisionRecord.objects.create(
+        framework=framework,
+        title="Selective Export Decision",
+        proposal_description="Test selective export"
+    )
+    reflection = LLMReflectionLog.objects.create(
+        framework=framework,
+        user_prompt="Test prompt",
+        context_snapshot="Test snapshot",
+        llm_response="Test reflection response",
+        provider_used="mock-model"
+    )
+
+    client.force_login(user)
+
+    # Selective export: only domain 1, no decisions, no facilitator instructions, no reflections
+    resp = client.get(
+        f"/exports/framework/{framework.id}/?download=0&domains={domain.id}&decisions=none&instructions=0&reflections=0"
+    )
+    assert resp.status_code == 200
+    content = resp.context["markdown_content"]
+    assert "Work & Vocation" in content
+    assert "Finance" not in content
+    assert "Selective Export Decision" not in content
+    assert "Facilitator Instructions for LLM" not in content
+    assert "Test reflection response" not in content
+
+    # Selective export with all options enabled
+    resp_all = client.get(
+        f"/exports/framework/{framework.id}/?download=0&domains={domain.id}&domains={domain2.id}&decisions={dec.id}&instructions=1&reflections=1"
+    )
+    assert resp_all.status_code == 200
+    content_all = resp_all.context["markdown_content"]
+    assert "Work & Vocation" in content_all
+    assert "Finance" in content_all
+    assert "Selective Export Decision" in content_all
+    assert "Facilitator Instructions for LLM" in content_all
+    assert "Test reflection response" in content_all
+
+    # Download parameter produces text/markdown attachment
+    resp_dl = client.get(f"/exports/framework/{framework.id}/?download=1")
+    assert resp_dl.status_code == 200
+    assert "text/markdown" in resp_dl["Content-Type"]
+    assert "attachment" in resp_dl["Content-Disposition"]
+
+
+def test_llm_chat_context_and_history(client, user, framework, domain, objective):
+    config, _ = UserLLMConfig.objects.get_or_create(user=user)
+    config.consent_given = True
+    config.provider = "ollama"
+    config.model_name = "llama3:latest"
+    config.save()
+
+    client.force_login(user)
+
+    # Initial reflection log
+    prev_log = LLMReflectionLog.objects.create(
+        framework=framework,
+        user_prompt="Prior message",
+        context_snapshot="Prior context",
+        llm_response="Prior AI answer",
+        provider_used="llama3:latest"
+    )
+
+    with patch("llm.views.generate_reflection", return_value=(True, "Guided advice on tradeoffs")) as mock_gen:
+        resp = client.post(f"/llm/framework/{framework.id}/chat/", {
+            "prompt": "How do I choose between these? Focus on trade-offs.",
+            "selected_domains": [str(domain.id)],
+            "include_history": "1"
+        })
+        assert resp.status_code == 302
+        assert mock_gen.called
+
+        # Reflection log was created
+        assert LLMReflectionLog.objects.filter(framework=framework, llm_response="Guided advice on tradeoffs").exists()
+
+    # GET chat view displays reflections and guided modes
+    resp_get = client.get(f"/llm/framework/{framework.id}/chat/")
+    assert resp_get.status_code == 200
+    assert "guided_modes" in resp_get.context
+    assert resp_get.context["reflections"].count() >= 1
+
+
+def test_llm_reflection_deletion(client, user, other_user, framework):
+    reflection = LLMReflectionLog.objects.create(
+        framework=framework,
+        user_prompt="Delete me",
+        context_snapshot="Snapshot",
+        llm_response="Will be deleted",
+        provider_used="test"
+    )
+
+    # Other user cannot delete
+    client.force_login(other_user)
+    resp_cross = client.post(f"/llm/reflection/{reflection.id}/delete/")
+    assert resp_cross.status_code == 404
+    assert LLMReflectionLog.objects.filter(id=reflection.id).exists()
+
+    # Owner can delete
+    client.force_login(user)
+    resp = client.post(f"/llm/reflection/{reflection.id}/delete/")
+    assert resp.status_code == 302
+    assert not LLMReflectionLog.objects.filter(id=reflection.id).exists()
+
+    # GET request returns 403 Forbidden
+    ref2 = LLMReflectionLog.objects.create(
+        framework=framework,
+        user_prompt="Keep me",
+        context_snapshot="Snapshot",
+        llm_response="Keep",
+        provider_used="test"
+    )
+    assert client.get(f"/llm/reflection/{ref2.id}/delete/").status_code == 403
+
+
+def test_llm_api_base_validation():
+    from accounts.forms import validate_llm_api_base
+    from django.core.exceptions import ValidationError
+
+    # Allowed providers with valid endpoints
+    assert validate_llm_api_base("openai", "https://api.openai.com/v1") == "https://api.openai.com/v1"
+    assert validate_llm_api_base("anthropic", "https://api.anthropic.com/v1") == "https://api.anthropic.com/v1"
+    assert validate_llm_api_base("gemini", "https://generativelanguage.googleapis.com") == "https://generativelanguage.googleapis.com"
+    assert validate_llm_api_base("openrouter", "https://openrouter.ai/api/v1") == "https://openrouter.ai/api/v1"
+    assert validate_llm_api_base("none", "http://any-endpoint.com") == "http://any-endpoint.com"
+    assert validate_llm_api_base("ollama", "") == ""
+
+    # Invalid scheme (HTTP when HTTPS required)
+    with pytest.raises(ValidationError, match="HTTPS"):
+        validate_llm_api_base("openai", "http://api.openai.com/v1")
+    with pytest.raises(ValidationError, match="HTTPS"):
+        validate_llm_api_base("anthropic", "http://api.anthropic.com/v1")
+    with pytest.raises(ValidationError, match="HTTPS"):
+        validate_llm_api_base("gemini", "http://generativelanguage.googleapis.com")
+    with pytest.raises(ValidationError, match="HTTPS"):
+        validate_llm_api_base("openrouter", "http://openrouter.ai/api/v1")
+
+    # Invalid hostnames for strict cloud providers
+    with pytest.raises(ValidationError, match="OpenAI API Base must point to api.openai.com"):
+        validate_llm_api_base("openai", "https://evil-openai.com/v1")
+    with pytest.raises(ValidationError, match="Anthropic API Base must point to api.anthropic.com"):
+        validate_llm_api_base("anthropic", "https://evil-anthropic.com/v1")
+    with pytest.raises(ValidationError, match="Google Gemini API Base must point to"):
+        validate_llm_api_base("gemini", "https://evil-gemini.com/v1")
+    with pytest.raises(ValidationError, match="OpenRouter API Base must point to openrouter.ai"):
+        validate_llm_api_base("openrouter", "https://evil-openrouter.ai/v1")
+
+    # Cloud metadata prohibition
+    with pytest.raises(ValidationError, match="cloud metadata endpoints is prohibited"):
+        validate_llm_api_base("ollama", "http://169.254.169.254/v1")
+    with pytest.raises(ValidationError, match="cloud metadata endpoints is prohibited"):
+        validate_llm_api_base("custom", "http://metadata.google.internal/computeMetadata")
+
+    # Scheme validation
+    with pytest.raises(ValidationError, match="must use http or https"):
+        validate_llm_api_base("custom", "ftp://example.com/v1")
+
+
+def test_coverage_boosters(user, other_user, framework, domain, why, objective):
+    from accounts.forms import is_safe_ollama_endpoint
+    from decisions.models import DecisionRecord, LLMReflectionLog
+    from decisions.admin import DecisionRecordAdmin, LLMReflectionLogAdmin
+    from django.contrib.admin.sites import AdminSite
+    from llm.service import generate_reflection
+
+    # 1. Endpoint safety checks
+    assert is_safe_ollama_endpoint("10.0.0.1") is False
+    assert is_safe_ollama_endpoint("192.168.1.1") is False
+    assert is_safe_ollama_endpoint("169.254.1.1") is False
+    assert is_safe_ollama_endpoint("invalid.host.that.does.not.exist") is False
+
+    # 2. String representations
+    dec = DecisionRecord.objects.create(framework=framework, title="Str Test", proposal_description="Desc")
+    assert "Str Test" in str(dec)
+    ref = LLMReflectionLog.objects.create(
+        framework=framework,
+        user_prompt="P",
+        context_snapshot="C",
+        llm_response="R",
+        provider_used="test"
+    )
+    assert "Reflection" in str(ref)
+
+    # 3. Model normalization and error branches
+    mock_resp = MagicMock()
+    mock_choice = MagicMock()
+    mock_choice.message.content = "OK"
+    mock_resp.choices = [mock_choice]
+
+    with patch("litellm.completion", return_value=mock_resp):
+        assert generate_reflection("ctx", "prompt", "custom", "my-vllm")[0] is True
+        assert generate_reflection("ctx", "prompt", "gemini", "gemini-1.5-flash")[0] is True
+        assert generate_reflection("ctx", "prompt", "anthropic", "claude-3-haiku")[0] is True
+        assert generate_reflection("ctx", "prompt", "openai", "gpt-4o")[0] is True
+
+    # Disabled / none provider
+    assert generate_reflection("ctx", "prompt", "none", "any")[0] is False
+
+    # Invalid API base URL
+    assert generate_reflection("ctx", "prompt", "openai", "gpt-4o", api_base="http://api.openai.com/v1")[0] is False
+
+    # LiteLLM exception handling
+    with patch("litellm.completion", side_effect=RuntimeError("API down")):
+        ok, err = generate_reflection("ctx", "prompt", "ollama", "llama3")
+        assert ok is False
+        assert "API down" in err
+
+    # 4. Decisions Admin coverage
+    site = AdminSite()
+    dec_admin = DecisionRecordAdmin(DecisionRecord, site)
+    req = MagicMock()
+    req.user = user
+    req.user.is_superuser = False
+
+    qs = dec_admin.get_queryset(req)
+    assert dec in qs
+
+    dec_other = DecisionRecord(framework=Framework.objects.create(owner=other_user, name="Other"))
+    assert dec_admin.has_change_permission(req, dec_other) is False
+    assert dec_admin.has_delete_permission(req, dec_other) is False
+
+    # Superuser check
+    req.user.is_superuser = True
+    assert dec_admin.has_change_permission(req, dec) is True
+    assert dec_admin.has_delete_permission(req, dec) is True
+
+    req.user.is_superuser = False
+    dec_admin.formfield_for_foreignkey(DecisionRecord._meta.get_field("framework"), req)
+    dec_admin.formfield_for_manytomany(DecisionRecord._meta.get_field("affected_domains"), req)
+    dec_admin.formfield_for_manytomany(DecisionRecord._meta.get_field("relevant_whys"), req)
+    dec_admin.formfield_for_manytomany(DecisionRecord._meta.get_field("supporting_objectives"), req)
+
+    ref_admin = LLMReflectionLogAdmin(LLMReflectionLog, site)
+    ref_qs = ref_admin.get_queryset(req)
+    assert ref in ref_qs
+
+    ref_other = LLMReflectionLog(framework=dec_other.framework)
+    assert ref_admin.has_change_permission(req, ref_other) is False
+    assert ref_admin.has_delete_permission(req, ref_other) is False
+
+    req.user.is_superuser = True
+    assert ref_admin.has_change_permission(req, ref) is True
+    assert ref_admin.has_delete_permission(req, ref) is True
+
+    req.user.is_superuser = False
+    ref_admin.formfield_for_foreignkey(LLMReflectionLog._meta.get_field("framework"), req)
+    ref_admin.formfield_for_foreignkey(LLMReflectionLog._meta.get_field("decision"), req)
+
+
+

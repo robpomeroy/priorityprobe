@@ -495,7 +495,16 @@ A local installation should remain useful without an LLM connection. LLM
 features should be an enhancement, not a requirement for using the
 framework.
 
-### 8.3 Initial data model
+### 8.4 Demo system and ephemeral sandbox mode
+
+For publicly accessible evaluation instances, the software should support a dedicated demonstration mode:
+
+1.  **Auto-population of sample data:** On startup or instance reset, the system can automatically populate one or more rich, realistic sample frameworks illustrating varied life situations, cross-domain decisions, and simulated LLM reflection logs.
+2.  **No-barrier exploration:** Visitors can explore the interface, examine cross-domain relationships, test decision workflows, and inspect export outputs without needing to register personal accounts or provide external LLM API credentials.
+3.  **Periodic scheduled reset:** To prevent data accumulation or inappropriate modifications by public visitors, the application should support an automated periodic refresh mechanism (e.g., a management command executed via systemd timer or cron) that safely purges visitor changes and restores the sample framework baseline.
+4.  **Security boundaries:** Demo mode instances must disable administrative account elevation from the web UI and prevent external SSRF or unauthenticated credential exposure.
+
+### 8.5 Initial data model
 
 The initial database model should be deliberately small.
 
@@ -606,6 +615,7 @@ that it is useful in everyday decision-making.
 
 ### 11.2 Defer until later
 
+-   Automated public demo system with periodic reset timers (specified in §8.4; implementation deferred to a post-MVP phase).
 -   Complex visualisations and relationship diagrams.
 -   Numerical scoring and weighted-priority calculations.
 -   Advanced analytics and reporting.

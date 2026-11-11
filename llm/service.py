@@ -26,6 +26,34 @@ Structure your reflections into clear headings:
 (Constructive alternatives and questions to help the user reflect.)
 """
 
+GUIDED_MODES = {
+    "general": {
+        "title": "General Thinking Partner",
+        "description": "Open exploration of priorities, balance, and clarifying questions.",
+        "prompt": "Reflect on my overall priorities framework. Ask clarifying questions to help me examine qualitative tensions and balance across domains.",
+    },
+    "refine_whys": {
+        "title": "Articulate & Refine Whys",
+        "description": "Distinguish enduring motivations and core convictions from surface goals.",
+        "prompt": "Examine the Whys articulated in my framework. Are any phrased merely as practical tasks or surface objectives rather than enduring reasons? What clarifying questions can help me articulate the deeper reason why these areas matter?",
+    },
+    "spot_gaps": {
+        "title": "Spot Gaps & Contradictions",
+        "description": "Identify unlinked objectives, overloaded domains, or conflicting priorities.",
+        "prompt": "Analyze my framework for potential blind spots: Are there domains without active objectives? Objectives without underlying Whys? Or apparent tensions between commitments across different domains?",
+    },
+    "formulate_objectives": {
+        "title": "Formulate Objectives & Goals",
+        "description": "Translate foundational Whys into actionable directions and practical goals.",
+        "prompt": "Help me translate my Whys into meaningful, practical objectives and concrete goals without imposing arbitrary deadlines or external metrics.",
+    },
+    "periodic_review": {
+        "title": "Periodic Framework Review",
+        "description": "Assess stalled or paused priorities and review overall balance.",
+        "prompt": "Guide me through a periodic review of my framework. Highlight items that have been paused or inactive, and help me reflect on whether my current focus aligns with my enduring Whys.",
+    },
+}
+
 def generate_reflection(
     user_context_markdown: str,
     user_prompt: str,
@@ -37,10 +65,21 @@ def generate_reflection(
 ) -> Tuple[bool, str]:
     """
     Vendor-neutral completion wrapper using LiteLLM.
-    Supports Ollama, OpenRouter, and other providers without vendor-specific code.
+    Supports Ollama, OpenRouter, OpenAI, Anthropic, Gemini, and custom OpenAI-compatible gateways.
     """
     if provider == "none" or not model_name:
         return False, "LLM integration is currently disabled or unconfigured in your settings."
+
+    # Normalize model prefix for LiteLLM routing
+    normalized_model = model_name.strip()
+    if provider == "custom" and not (normalized_model.startswith("openai/") or "/" in normalized_model):
+        normalized_model = f"openai/{normalized_model}"
+    elif provider == "gemini" and not normalized_model.startswith("gemini/"):
+        normalized_model = f"gemini/{normalized_model}"
+    elif provider == "anthropic" and not normalized_model.startswith("anthropic/"):
+        normalized_model = f"anthropic/{normalized_model}"
+    elif provider == "openai" and not (normalized_model.startswith("openai/") or "/" in normalized_model):
+        normalized_model = f"openai/{normalized_model}"
 
     # Validate api_base to prevent SSRF
     if api_base:
@@ -65,7 +104,7 @@ def generate_reflection(
             messages.append(item)
 
     kwargs = {
-        "model": model_name,
+        "model": normalized_model,
         "messages": messages,
         "temperature": 0.4,
     }

@@ -1,0 +1,68 @@
+---
+- name: Install Apache (httpd) and mod_ssl packages
+  ansible.builtin.dnf:
+    name:
+      - httpd
+      - mod_ssl
+    state: present
+
+- name: Enable SELinux boolean to allow Apache to proxy network connections to Gunicorn
+  ansible.posix.seboolean:
+    name: httpd_can_network_connect
+    state: true
+    persistent: true
+
+- name: Allow Apache read access to static files directory under SELinux
+  community.general.sefcontext:
+    target: "{{ app_root }}/staticfiles(/.*)?"
+    setype: httpd_sys_content_t
+    state: present
+  register: static_selinux
+
+- name: Apply updated SELinux file contexts to staticfiles directory
+  ansible.builtin.command:
+    cmd: "restorecon -R -v {{ app_root }}/staticfiles"
+  when: static_selinux.changed
+
+- name: Generate self-signed certificate if SSL is enabled and certificates do not exist
+  when: enable_ssl
+  block:
+    - name: Ensure SSL certificate directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - "{{ ssl_cert_path | dirname }}"
+        - "{{ ssl_key_path | dirname }}"
+
+    - name: Check if SSL private key already exists
+      ansible.builtin.stat:
+        path: "{{ ssl_key_path }}"
+      register: key_stat
+
+    - name: Generate self-signed TLS certificate for local / initial deployment
+      ansible.builtin.command:
+        cmd: >
+          openssl req -x509 -nodes -days 365 -newkey rsa:2048
+          -keyout {{ ssl_key_path }}
+          -out {{ ssl_cert_path }}
+          -subj "/CN={{ server_domain }}"
+      when: not key_stat.stat.exists
+
+- name: Deploy Apache VirtualHost configuration
+  ansible.builtin.template:
+    src: prioritysuite.conf.j2
+    dest: /etc/httpd/conf.d/prioritysuite.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Apache
+
+- name: Enable and start Apache service (httpd)
+  ansible.builtin.systemd:
+    name: httpd
+    state: started
+    enabled: true
