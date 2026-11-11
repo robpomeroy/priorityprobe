@@ -4,6 +4,7 @@ from urllib.parse import urlparse
 from django import forms
 from django.conf import settings
 from django.contrib.auth.models import User
+from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from accounts.models import UserLLMConfig
 
@@ -12,22 +13,23 @@ ALLOWED_PROVIDERS = {"ollama", "openrouter", "none"}
 def is_safe_ollama_endpoint(hostname: str) -> bool:
     """
     Checks if an Ollama hostname/IP is permitted.
-    In local standalone mode, localhost / 127.0.0.1 is permitted.
-    Private/internal network ranges or cloud metadata are prohibited unless explicitly allowed.
+    Private/internal network ranges or cloud metadata are prohibited unless explicitly allowlisted.
+    In hosted production deployments, loopback/private destinations are blocked unless
+    specifically configured in settings.OLLAMA_ALLOWED_HOSTS.
     """
-    # Check configured allowlist in settings if present
     allowlist = getattr(settings, "OLLAMA_ALLOWED_HOSTS", None)
     if allowlist is not None and hostname in allowlist:
         return True
 
-    # By default, allow localhost / 127.0.0.1 / ::1
-    if hostname in ("localhost", "127.0.0.1", "::1"):
-        return True
+    # In local development (DEBUG=True), allow localhost and 127.0.0.1 by default
+    if getattr(settings, "DEBUG", False):
+        if hostname in ("localhost", "127.0.0.1", "::1"):
+            return True
 
     try:
         ip = ipaddress.ip_address(hostname)
         if ip.is_loopback:
-            return True
+            return bool(getattr(settings, "DEBUG", False))
         if ip.is_private or ip.is_link_local or ip.is_reserved or ip.is_multicast:
             return False
     except ValueError:
@@ -36,7 +38,7 @@ def is_safe_ollama_endpoint(hostname: str) -> bool:
             resolved_ip_str = socket.gethostbyname(hostname)
             resolved_ip = ipaddress.ip_address(resolved_ip_str)
             if resolved_ip.is_loopback:
-                return True
+                return bool(getattr(settings, "DEBUG", False))
             if resolved_ip.is_private or resolved_ip.is_link_local or resolved_ip.is_reserved:
                 return False
         except Exception:
@@ -87,8 +89,18 @@ class UserRegistrationForm(forms.ModelForm):
         cleaned_data = super().clean()
         p1 = cleaned_data.get("password")
         p2 = cleaned_data.get("password_confirm")
-        if p1 and p2 and p1 != p2:
-            self.add_error("password_confirm", "Passwords do not match.")
+        if p1 and p2:
+            if p1 != p2:
+                self.add_error("password_confirm", "Passwords do not match.")
+            else:
+                temp_user = User(
+                    username=cleaned_data.get("username", ""),
+                    email=cleaned_data.get("email", ""),
+                )
+                try:
+                    validate_password(p1, user=temp_user)
+                except ValidationError as error:
+                    self.add_error("password", error)
         return cleaned_data
 
 class UserLLMConfigForm(forms.ModelForm):

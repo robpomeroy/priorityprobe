@@ -17,7 +17,11 @@ def generate_framework_markdown(framework: Framework, include_instructions: bool
     if framework.description:
         lines.append(f"> {framework.description}\n")
 
-    domains = framework.domains.all()
+    domains = framework.domains.prefetch_related(
+        "whys",
+        "primary_objectives__related_domains",
+        "primary_goals__related_domains",
+    ).all()
     if selected_domain_ids is not None:
         domains = domains.filter(id__in=selected_domain_ids)
 
@@ -66,9 +70,18 @@ def generate_framework_markdown(framework: Framework, include_instructions: bool
 
     return "\n".join(lines)
 
-def generate_decision_markdown(decision: DecisionRecord) -> str:
+def generate_decision_markdown(decision: DecisionRecord, include_instructions: bool = True) -> str:
     """Generates Markdown for a specific Decision Record and its cross-domain links."""
-    lines = [
+    lines = []
+
+    if include_instructions:
+        lines.append("# PrioritySuite — Decision Assessment & Facilitator Context")
+        lines.append("")
+        lines.append("## Facilitator Instructions for LLM")
+        lines.append(SYSTEM_FACILITATOR_PROMPT.strip())
+        lines.append("\n---\n")
+
+    lines.extend([
         f"# Decision Assessment: {decision.title}",
         f"**Status:** {decision.get_status_display()}",
         f"**Framework:** {decision.framework.name}",
@@ -77,7 +90,7 @@ def generate_decision_markdown(decision: DecisionRecord) -> str:
         decision.proposal_description,
         "",
         "## Affected Domains",
-    ]
+    ])
     aff = decision.affected_domains.all()
     if aff.exists():
         for d in aff:

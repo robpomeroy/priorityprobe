@@ -2,6 +2,9 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
+# Ensure LiteLLM uses bundled offline cost map without remote network fetches
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -134,6 +137,14 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 LOGIN_URL = "accounts:login"
 LOGIN_REDIRECT_URL = "frameworks:workspace"
 LOGOUT_REDIRECT_URL = "accounts:login"
+
+# Trust X-Forwarded-Proto from reverse proxy (e.g. Nginx TLS terminator)
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+
+# Allowlisted Ollama hosts in hosted deployments (comma-separated, e.g. "ollama,host.docker.internal")
+OLLAMA_ALLOWED_HOSTS = [h.strip() for h in os.environ.get("OLLAMA_ALLOWED_HOSTS", "").split(",") if h.strip()]
 
 # Encryption key for sensitive fields (BYOK API keys)
 ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY", "")

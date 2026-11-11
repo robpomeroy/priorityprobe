@@ -14,6 +14,25 @@ class UserLLMConfigAdmin(admin.ModelAdmin):
             return qs
         return qs.filter(user=request.user)
 
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "user" and not request.user.is_superuser:
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            kwargs["queryset"] = User.objects.filter(id=request.user.id)
+            kwargs["initial"] = request.user.id
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+    def save_model(self, request, obj, form, change):
+        if not request.user.is_superuser:
+            obj.user = request.user
+        super().save_model(request, obj, form, change)
+
+    def has_add_permission(self, request):
+        if not request.user.is_superuser:
+            # A user only has at most one UserLLMConfig (OneToOne)
+            return not UserLLMConfig.objects.filter(user=request.user).exists()
+        return super().has_add_permission(request)
+
     def has_change_permission(self, request, obj=None):
         if obj is not None and not request.user.is_superuser and obj.user != request.user:
             return False

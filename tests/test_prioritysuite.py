@@ -1,3 +1,6 @@
+import os
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+
 import pytest
 from django.contrib.auth.models import User
 from accounts.models import UserLLMConfig
@@ -314,7 +317,8 @@ def test_llm_service_disabled():
     assert "disabled" in msg
 
 @patch("litellm.completion")
-def test_chat_view_reflection(mock_completion, client, user, framework):
+def test_chat_view_reflection(mock_completion, client, user, framework, settings):
+    settings.OLLAMA_ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
     mock_response = MagicMock()
     mock_choice = MagicMock()
     mock_choice.message.content = "Insightful reflection"
@@ -466,7 +470,9 @@ def test_secret_key_production_error():
     import importlib
     import sys
     from unittest.mock import patch
+    from django.conf import settings
 
+    old_debug = getattr(settings, "DEBUG", True)
     # Ensure config.settings actually raises ValueError when imported with empty key and DEBUG=False
     with patch.dict(os.environ, {"DJANGO_SECRET_KEY": "", "DEBUG": "False"}):
         if "config.settings" in sys.modules:
@@ -478,6 +484,8 @@ def test_secret_key_production_error():
     if "config.settings" in sys.modules:
         del sys.modules["config.settings"]
     importlib.import_module("config.settings")
+    settings._setup()
+    settings.DEBUG = old_debug
 
 def test_api_base_ssrf_validation(client, user):
     client.force_login(user)
@@ -566,3 +574,73 @@ def test_decision_empty_prompt_uses_default(client, user, framework):
         # Verify the prompt sent was not blank
         called_prompt = mock_gen.call_args[1]["user_prompt"]
         assert "Analyze the cross-domain tensions" in called_prompt
+
+def test_registration_password_policy(client, db):
+    # Common password rejected
+    resp = client.post("/accounts/register/", {
+        "username": "weakuser1",
+        "email": "weak1@example.com",
+        "password": "password",
+        "password_confirm": "password",
+    })
+    assert resp.status_code == 200
+    assert not User.objects.filter(username="weakuser1").exists()
+
+    # Short password rejected
+    resp = client.post("/accounts/register/", {
+        "username": "weakuser2",
+        "email": "weak2@example.com",
+        "password": "abc",
+        "password_confirm": "abc",
+    })
+    assert resp.status_code == 200
+    assert not User.objects.filter(username="weakuser2").exists()
+
+def test_decision_export_instructions_and_filename_sanitization(client, user, framework):
+    client.force_login(user)
+    dec = DecisionRecord.objects.create(
+        framework=framework,
+        title="Unsafe\r\nTitle \"With\" Slashes/And/Quotes",
+        proposal_description="Test proposal",
+    )
+    # Decision export content contains facilitator instructions
+    resp = client.get(f"/exports/decision/{dec.id}/")
+    assert resp.status_code == 200
+    assert "Facilitator Instructions for LLM" in resp.context["markdown_content"]
+
+    # Download header does not contain newlines or double quotes from the title
+    resp_dl = client.get(f"/exports/decision/{dec.id}/?download=1")
+    assert resp_dl.status_code == 200
+    cd = resp_dl["Content-Disposition"]
+    assert "\r" not in cd and "\n" not in cd
+    assert 'filename="decision_unsafe-title-with-slashesandquotes.md"' in cd
+
+def test_user_llm_admin_add_and_ownership_enforcement(user, other_user):
+    from django.contrib.admin.sites import AdminSite
+    from accounts.admin import UserLLMConfigAdmin
+    site = AdminSite()
+    llm_admin = UserLLMConfigAdmin(UserLLMConfig, site)
+
+    other_user.is_staff = True
+    other_user.save()
+
+    request = MagicMock()
+    request.user = other_user
+
+    # other_user has no config yet -> has_add_permission is True
+    assert llm_admin.has_add_permission(request) is True
+
+    # User field foreignkey is scoped to other_user only
+    user_field = llm_admin.formfield_for_foreignkey(UserLLMConfig._meta.get_field("user"), request)
+    assert user_field.queryset.count() == 1
+    assert user_field.queryset.first() == other_user
+
+    # When saved, non-superuser cannot set user to another user
+    obj = UserLLMConfig(user=user, provider="ollama")
+    llm_admin.save_model(request, obj, form=MagicMock(), change=False)
+    assert obj.user == other_user
+    obj.save()
+
+    # Once other_user has a config, has_add_permission becomes False (OneToOne)
+    assert llm_admin.has_add_permission(request) is False
+
