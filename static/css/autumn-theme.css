@@ -1,0 +1,131 @@
+:root,
+[data-bs-theme="light"] {
+    --ap-bg: #FAF6F0;
+    --ap-surface: #FFFFFF;
+    --ap-card-bg: #F8F4EE;
+    --ap-card-border: #E8DEC8;
+    --ap-text: #2C221E;
+    --ap-text-muted: #736154;
+    
+    /* Autumnal Accent Colors */
+    --ap-terracotta: #B85D3B;
+    --ap-terracotta-hover: #9E4E30;
+    --ap-amber: #D48C2A;
+    --ap-amber-light: #FBF0D9;
+    --ap-sage: #53755C;
+    --ap-sage-light: #EBF3ED;
+    --ap-russet: #8B3E2F;
+    --ap-bark: #4A3B32;
+
+    /* Semantic Mappings */
+    --bs-body-bg: var(--ap-bg);
+    --bs-body-color: var(--ap-text);
+    --bs-primary: var(--ap-terracotta);
+    --bs-primary-rgb: 184, 93, 59;
+    --bs-secondary: var(--ap-sage);
+    --bs-secondary-rgb: 83, 117, 92;
+    --bs-warning: var(--ap-amber);
+    --bs-warning-rgb: 212, 140, 42;
+    --bs-card-bg: var(--ap-card-bg);
+    --bs-card-border-color: var(--ap-card-border);
+}
+
+[data-bs-theme="dark"] {
+    --ap-bg: #1A1614;
+    --ap-surface: #241F1C;
+    --ap-card-bg: #2B2420;
+    --ap-card-border: #423832;
+    --ap-text: #EDE4D9;
+    --ap-text-muted: #A8988C;
+    
+    /* Autumnal Accent Colors (dark mode softened) */
+    --ap-terracotta: #D97954;
+    --ap-terracotta-hover: #E88F6D;
+    --ap-amber: #E2A03F;
+    --ap-amber-light: #3D2D14;
+    --ap-sage: #6D9477;
+    --ap-sage-light: #1D2B20;
+    --ap-russet: #B05543;
+    --ap-bark: #6E5B50;
+
+    /* Semantic Mappings */
+    --bs-body-bg: var(--ap-bg);
+    --bs-body-color: var(--ap-text);
+    --bs-primary: var(--ap-terracotta);
+    --bs-primary-rgb: 217, 121, 84;
+    --bs-secondary: var(--ap-sage);
+    --bs-secondary-rgb: 109, 148, 119;
+    --bs-warning: var(--ap-amber);
+    --bs-warning-rgb: 226, 160, 63;
+    --bs-card-bg: var(--ap-card-bg);
+    --bs-card-border-color: var(--ap-card-border);
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+main {
+    flex: 1;
+}
+
+/* Custom Component Cards for Framework Hierarchy */
+.badge-why {
+    background-color: var(--ap-amber-light);
+    color: var(--ap-amber);
+    border: 1px solid var(--ap-amber);
+    font-weight: 500;
+}
+[data-bs-theme="dark"] .badge-why {
+    color: #F8D38D;
+}
+
+.badge-non-negotiable {
+    background-color: var(--ap-russet);
+    color: #FFF;
+}
+
+.card-domain {
+    border-top: 4px solid var(--ap-terracotta) !important;
+    border-radius: 0.5rem;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+.card-why {
+    border-left: 3px solid var(--ap-amber) !important;
+    background-color: var(--bs-body-bg);
+}
+
+.card-objective {
+    border-left: 3px solid var(--ap-sage) !important;
+    background-color: var(--bs-body-bg);
+}
+
+.card-goal {
+    border-left: 3px solid var(--ap-terracotta) !important;
+    background-color: var(--bs-body-bg);
+}
+
+.card-decision {
+    border-top: 4px solid var(--ap-sage) !important;
+}
+
+.llm-thinking-partner {
+    border: 2px dashed var(--ap-sage);
+    background-color: var(--ap-card-bg);
+}
+
+/* Calm typography */
+.text-terracotta { color: var(--ap-terracotta) !important; }
+.text-sage { color: var(--ap-sage) !important; }
+.text-amber { color: var(--ap-amber) !important; }
+.bg-terracotta { background-color: var(--ap-terracotta) !important; color: white !important; }
+.bg-sage { background-color: var(--ap-sage) !important; color: white !important; }
+
+.navbar-brand {
+    font-weight: 700;
+    letter-spacing: -0.5px;
+}

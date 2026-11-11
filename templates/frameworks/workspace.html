@@ -1,0 +1,195 @@
+{% extends 'base.html' %}
+{% block title %}{{ framework.name }} — Workspace{% endblock %}
+
+{% block content %}
+<div class="row mb-4 align-items-center">
+    <div class="col-md-7">
+        <h2 class="mb-1 text-terracotta d-flex align-items-center">
+            <span>{{ framework.name }}</span>
+            {% if framework.is_sample %}
+                <span class="badge bg-amber text-white fs-6 ms-3">Sample Content</span>
+            {% endif %}
+        </h2>
+        <p class="text-muted small mb-0">{{ framework.description|default:"Personal priorities organized by Domains → Whys → Objectives → Goals" }}</p>
+    </div>
+    <div class="col-md-5 text-md-end mt-3 mt-md-0">
+        <div class="btn-group shadow-sm">
+            <a href="{% url 'frameworks:domain_create' framework.id %}" class="btn btn-outline-primary btn-sm">+ Add Domain</a>
+            <a href="{% url 'frameworks:objective_create' framework.id %}" class="btn btn-outline-secondary btn-sm">+ Add Objective</a>
+            <a href="{% url 'frameworks:goal_create' framework.id %}" class="btn btn-outline-secondary btn-sm">+ Add Goal</a>
+            <a href="{% url 'exports:export_framework' framework.id %}" class="btn btn-outline-dark btn-sm">Export Markdown</a>
+        </div>
+        {% if framework.is_sample %}
+            <form method="post" action="{% url 'frameworks:remove_sample' %}" class="d-inline ms-2">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Remove all sample content?')">Remove Samples</button>
+            </form>
+        {% elif not domains.exists %}
+            <form method="post" action="{% url 'frameworks:seed_sample' %}" class="d-inline ms-2">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline-secondary">Load Sample Framework</button>
+            </form>
+        {% endif %}
+    </div>
+</div>
+
+{% if not domains.exists %}
+<div class="card shadow-sm border p-5 text-center my-4" style="background-color: var(--bs-card-bg);">
+    <div class="mb-3 fs-1">🌱</div>
+    <h4 class="text-terracotta">Your framework is ready to take shape</h4>
+    <p class="text-muted mx-auto" style="max-width: 600px;">
+        Start by creating broad spheres of life (<strong>Domains</strong>) such as <em>Family and Home</em>, <em>Work and Vocation</em>, or <em>Personal Health</em>. Inside each domain, articulate your enduring reasons (<strong>Whys</strong>).
+    </p>
+    <div class="mt-3">
+        <a href="{% url 'frameworks:domain_create' framework.id %}" class="btn btn-primary bg-terracotta me-2">+ Create First Domain</a>
+        <form method="post" action="{% url 'frameworks:seed_sample' %}" class="d-inline">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-secondary">Load Sample Content to Explore</button>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<!-- Domain Canvas -->
+<div class="row g-4">
+    {% for domain in domains %}
+        <div class="col-lg-6 col-xl-4">
+            <div class="card card-domain h-100 shadow-sm">
+                <div class="card-header bg-transparent d-flex justify-content-between align-items-center py-3">
+                    <div>
+                        <h5 class="mb-0 text-terracotta fw-bold">{{ domain.name }}</h5>
+                        {% if domain.description %}
+                            <p class="text-muted small mb-0 mt-1">{{ domain.description }}</p>
+                        {% endif %}
+                    </div>
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-link text-muted p-0" data-bs-toggle="dropdown">⋮</button>
+                        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                            <li><a class="dropdown-item" href="{% url 'frameworks:domain_edit' domain.id %}">Edit Domain</a></li>
+                            <li><a class="dropdown-item" href="{% url 'frameworks:why_create' domain.id %}">+ Add Why</a></li>
+                            <li><a class="dropdown-item" href="{% url 'frameworks:objective_create' framework.id %}?domain_id={{ domain.id }}">+ Add Objective</a></li>
+                            <li><a class="dropdown-item" href="{% url 'frameworks:goal_create' framework.id %}?domain_id={{ domain.id }}">+ Add Goal</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item text-danger" href="{% url 'frameworks:domain_delete' domain.id %}">Delete Domain</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="card-body p-3">
+                    <!-- Whys Section -->
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="small text-uppercase fw-bold text-amber">Whys (Enduring Foundations)</span>
+                            <a href="{% url 'frameworks:why_create' domain.id %}" class="badge bg-light text-dark text-decoration-none border">+ Why</a>
+                        </div>
+                        {% for why in domain.whys.all %}
+                            <div class="card card-why p-2 mb-2 shadow-none border">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div class="fw-semibold small">
+                                        {{ why.title }}
+                                        {% if why.is_non_negotiable %}
+                                            <span class="badge badge-non-negotiable ms-1">Non-Negotiable</span>
+                                        {% endif %}
+                                    </div>
+                                    <div class="dropdown ms-1">
+                                        <button class="btn btn-sm btn-link text-muted p-0" data-bs-toggle="dropdown">⋮</button>
+                                        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                            <li><a class="dropdown-item small" href="{% url 'frameworks:why_edit' why.id %}">Edit</a></li>
+                                            <li><a class="dropdown-item small text-danger" href="{% url 'frameworks:why_delete' why.id %}">Delete</a></li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                {% if why.description %}
+                                    <p class="text-muted small mb-0 mt-1">{{ why.description }}</p>
+                                {% endif %}
+                            </div>
+                        {% empty %}
+                            <div class="text-muted small fst-italic py-1">No Whys defined yet.</div>
+                        {% endfor %}
+                    </div>
+
+                    <hr class="my-3 opacity-25">
+
+                    <!-- Objectives Section -->
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="small text-uppercase fw-bold text-sage">Objectives</span>
+                            <a href="{% url 'frameworks:objective_create' framework.id %}?domain_id={{ domain.id }}" class="badge bg-light text-dark text-decoration-none border">+ Objective</a>
+                        </div>
+                        {% for obj in domain.primary_objectives.all %}
+                            <div class="card card-objective p-2 mb-2 shadow-none border">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div class="small fw-semibold">
+                                        {{ obj.title }}
+                                        <span class="badge bg-secondary-subtle text-secondary small ms-1">{{ obj.get_status_display }}</span>
+                                    </div>
+                                    <div class="dropdown ms-1">
+                                        <button class="btn btn-sm btn-link text-muted p-0" data-bs-toggle="dropdown">⋮</button>
+                                        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                            <li><a class="dropdown-item small" href="{% url 'frameworks:objective_edit' obj.id %}">Edit</a></li>
+                                            <li><a class="dropdown-item small text-danger" href="{% url 'frameworks:objective_delete' obj.id %}">Delete</a></li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                {% if obj.description %}
+                                    <p class="text-muted small mb-1 mt-1">{{ obj.description }}</p>
+                                {% endif %}
+                                <div class="mt-1 d-flex flex-wrap gap-1">
+                                    {% for why in obj.whys.all %}
+                                        <span class="badge badge-why small" title="Serves Why">Why: {{ why.title|truncatechars:24 }}</span>
+                                    {% endfor %}
+                                    {% for rel in obj.related_domains.all %}
+                                        <span class="badge bg-light text-dark border small" title="Related Domain">↔ {{ rel.name }}</span>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        {% empty %}
+                            <div class="text-muted small fst-italic py-1">No Objectives yet.</div>
+                        {% endfor %}
+                    </div>
+
+                    <hr class="my-3 opacity-25">
+
+                    <!-- Goals Section -->
+                    <div>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="small text-uppercase fw-bold text-terracotta">Goals</span>
+                            <a href="{% url 'frameworks:goal_create' framework.id %}?domain_id={{ domain.id }}" class="badge bg-light text-dark text-decoration-none border">+ Goal</a>
+                        </div>
+                        {% for goal in domain.primary_goals.all %}
+                            <div class="card card-goal p-2 mb-2 shadow-none border">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div class="small fw-semibold">
+                                        {{ goal.title }}
+                                        <span class="badge bg-primary-subtle text-primary small ms-1">{{ goal.get_status_display }}</span>
+                                    </div>
+                                    <div class="dropdown ms-1">
+                                        <button class="btn btn-sm btn-link text-muted p-0" data-bs-toggle="dropdown">⋮</button>
+                                        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                            <li><a class="dropdown-item small" href="{% url 'frameworks:goal_edit' goal.id %}">Edit</a></li>
+                                            <li><a class="dropdown-item small text-danger" href="{% url 'frameworks:goal_delete' goal.id %}">Delete</a></li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                {% if goal.description %}
+                                    <p class="text-muted small mb-1 mt-1">{{ goal.description }}</p>
+                                {% endif %}
+                                <div class="mt-1 d-flex flex-wrap gap-1 align-items-center">
+                                    {% if goal.target_date %}
+                                        <span class="badge bg-light text-muted border small">📅 {{ goal.target_date }}</span>
+                                    {% endif %}
+                                    {% for rel in goal.related_domains.all %}
+                                        <span class="badge bg-light text-dark border small">↔ {{ rel.name }}</span>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        {% empty %}
+                            <div class="text-muted small fst-italic py-1">No Goals yet.</div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% endfor %}
+</div>
+{% endblock %}

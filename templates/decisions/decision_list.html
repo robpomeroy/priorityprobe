@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+{% block title %}Decision Assessments — PrioritySuite{% endblock %}
+
+{% block content %}
+<div class="row mb-4 align-items-center">
+    <div class="col-md-8">
+        <h2 class="text-terracotta mb-1">Cross-Domain Decision Assessments</h2>
+        <p class="text-muted small mb-0">Examine proposed opportunities, commitments, and changes across your whole framework.</p>
+    </div>
+    <div class="col-md-4 text-md-end mt-3 mt-md-0">
+        <a href="{% url 'decisions:decision_create' %}" class="btn btn-primary bg-terracotta btn-sm">+ New Assessment</a>
+    </div>
+</div>
+
+<div class="row g-4">
+    {% for decision in decisions %}
+        <div class="col-md-6 col-lg-4">
+            <div class="card card-decision shadow-sm h-100">
+                <div class="card-body p-4 d-flex flex-column">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <span class="badge bg-secondary-subtle text-secondary">{{ decision.get_status_display }}</span>
+                        <span class="text-muted small">{{ decision.created_at|date:"M d, Y" }}</span>
+                    </div>
+                    <h5 class="card-title fw-bold text-terracotta">{{ decision.title }}</h5>
+                    <p class="card-text text-muted small flex-grow-1">
+                        {{ decision.proposal_description|truncatewords:24 }}
+                    </p>
+
+                    <div class="mb-3">
+                        <div class="small fw-semibold text-muted mb-1">Affected Domains:</div>
+                        <div class="d-flex flex-wrap gap-1">
+                            {% for domain in decision.affected_domains.all %}
+                                <span class="badge bg-light text-dark border small">{{ domain.name }}</span>
+                            {% empty %}
+                                <span class="small text-muted fst-italic">None tagged</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mt-3 pt-3 border-top">
+                        <a href="{% url 'decisions:decision_detail' decision.id %}" class="btn btn-sm btn-outline-primary">Open Assessment</a>
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-link text-muted p-0" data-bs-toggle="dropdown">⋮</button>
+                            <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                <li><a class="dropdown-item small" href="{% url 'decisions:decision_edit' decision.id %}">Edit</a></li>
+                                <li><a class="dropdown-item small" href="{% url 'exports:export_decision' decision.id %}">Export Markdown</a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item small text-danger" href="{% url 'decisions:decision_delete' decision.id %}">Delete</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% empty %}
+        <div class="col-12">
+            <div class="card shadow-sm border p-5 text-center my-4" style="background-color: var(--bs-card-bg);">
+                <div class="mb-3 fs-1">⚖️</div>
+                <h4 class="text-terracotta">No Decision Assessments yet</h4>
+                <p class="text-muted mx-auto" style="max-width: 550px;">
+                    When considering a new opportunity, project, or life commitment, create a Decision Assessment to explore its cross-domain tensions, supporting vs. conflicting objectives, and alternatives.
+                </p>
+                <div>
+                    <a href="{% url 'decisions:decision_create' %}" class="btn btn-primary bg-terracotta">+ Create First Assessment</a>
+                </div>
+            </div>
+        </div>
+    {% endfor %}
+</div>
+{% endblock %}

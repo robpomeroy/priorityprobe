@@ -1,12 +1,9 @@
-# Product Specification v0.2
+# PrioritySuite Specification
 
 ## Personal Priorities and Decision-Making Framework
 
-**Status:** Draft\
-**Purpose:** Product and implementation brief for an open-source
-application\
-**Primary audience:** Product and engineering contributors, including
-agentic IDEs
+**Purpose:** Product and implementation brief for an open-source application
+**Primary audience:** Product and engineering contributors, including agents
 
 ------------------------------------------------------------------------
 

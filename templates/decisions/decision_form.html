@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }} — PrioritySuite{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center py-4">
+    <div class="col-lg-9">
+        <div class="card shadow-sm border">
+            <div class="card-header bg-transparent py-3">
+                <h4 class="mb-0 text-terracotta">{{ title }}</h4>
+                <p class="text-muted small mb-0">Guided 7-point cross-domain assessment without artificial numerical ranking.</p>
+            </div>
+            <div class="card-body p-4">
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    <!-- 1. Proposal -->
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">1. Opportunity / Decision Proposal</label>
+                        {{ form.title }}
+                        <div class="mt-2">{{ form.proposal_description }}</div>
+                    </div>
+
+                    <!-- 2. Affected Domains & Whys -->
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">2a. Affected Domains</label>
+                            {{ form.affected_domains }}
+                            <div class="form-text small">Select which areas of life this opportunity touches.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">2b. Relevant Whys</label>
+                            {{ form.relevant_whys }}
+                            <div class="form-text small">Which underlying reasons or convictions are engaged?</div>
+                        </div>
+                    </div>
+
+                    <!-- 3. Supporting vs Conflicting Objectives -->
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold text-sage">3a. Supporting Objectives</label>
+                            {{ form.supporting_objectives }}
+                            <div class="form-text small">Which existing objectives would this opportunity advance?</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold text-terracotta">3b. Conflicting Objectives / Tensions</label>
+                            {{ form.conflicting_objectives }}
+                            <div class="form-text small">Which objectives might this compromise or steal time/energy from?</div>
+                        </div>
+                    </div>
+
+                    <!-- 4. Qualitative Reflection -->
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">4. Benefits, Costs & Opportunity Costs</label>
+                        {{ form.benefits_and_costs }}
+                    </div>
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">5. Alternatives Considered</label>
+                            {{ form.alternatives_considered }}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">6. Unresolved Questions</label>
+                            {{ form.unresolved_questions }}
+                        </div>
+                    </div>
+
+                    <!-- 5. Decision Outcome -->
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">7. Decision Outcome & Reasoning</label>
+                        {{ form.decision_outcome }}
+                        <div class="mt-2 row align-items-center">
+                            <div class="col-md-4">
+                                <label class="form-label small">Status:</label>
+                                {{ form.status }}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-between mt-4 pt-3 border-top">
+                        <a href="{% url 'decisions:decision_list' %}" class="btn btn-outline-secondary">Cancel</a>
+                        <button type="submit" class="btn btn-primary bg-terracotta">Save Decision Assessment</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
