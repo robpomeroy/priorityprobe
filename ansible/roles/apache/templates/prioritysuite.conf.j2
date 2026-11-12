@@ -6,10 +6,10 @@
     ServerName {{ server_domain }}
     ServerAdmin {{ server_admin_email }}
 
-    # Redirect all plaintext HTTP traffic to HTTPS
+    # Redirect all plaintext HTTP traffic to HTTPS securely using configured domain
     RewriteEngine On
     RewriteCond %{HTTPS} off
-    RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+    RewriteRule ^(.*)$ https://{{ server_domain }}%{REQUEST_URI} [R=301,L]
 </VirtualHost>
 
 <VirtualHost *:443>

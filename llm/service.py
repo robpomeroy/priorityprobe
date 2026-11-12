@@ -82,26 +82,31 @@ def generate_reflection(
         normalized_model = f"openai/{normalized_model}"
 
     # Validate api_base to prevent SSRF
-    if api_base:
+    resolved_api_base = api_base
+    if not resolved_api_base and provider == "ollama":
+        resolved_api_base = "http://localhost:11434"
+
+    if resolved_api_base or provider in ("ollama", "custom"):
         from accounts.forms import validate_llm_api_base
         from django.core.exceptions import ValidationError
         try:
-            validate_llm_api_base(provider, api_base)
+            validate_llm_api_base(provider, resolved_api_base or "")
         except ValidationError as e:
             return False, f"Invalid API base URL: {'; '.join(e.messages)}"
 
-    # Format messages
+    # Format messages: system -> previous conversation history -> current prompt
     messages = [
         {"role": "system", "content": SYSTEM_FACILITATOR_PROMPT},
-        {
-            "role": "user",
-            "content": f"Here is my current Priorities Framework context:\n\n{user_context_markdown}\n\nUser Question/Scenario:\n{user_prompt}",
-        },
     ]
 
     if history:
         for item in history:
             messages.append(item)
+
+    messages.append({
+        "role": "user",
+        "content": f"Here is my current Priorities Framework context:\n\n{user_context_markdown}\n\nUser Question/Scenario:\n{user_prompt}",
+    })
 
     kwargs = {
         "model": normalized_model,

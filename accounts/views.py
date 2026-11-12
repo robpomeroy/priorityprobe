@@ -54,10 +54,29 @@ def test_llm_connection_view(request):
     if request.method != "POST":
         return redirect("accounts:settings")
     config = getattr(request.user, "llm_config", None)
-    if not config or config.provider == "none" or not config.model_name:
+
+    # Allow testing unsaved form values if submitted directly from settings form
+    if "provider" in request.POST:
+        provider = request.POST.get("provider", "none")
+        model_name = request.POST.get("model_name", "").strip()
+        api_base = request.POST.get("api_base", "").strip()
+        consent_given = request.POST.get("consent_given") in ("on", "true", "1", True)
+        raw_key = request.POST.get("raw_api_key", "").strip()
+        api_key = raw_key or (config.api_key if config else "")
+    else:
+        if not config:
+            messages.warning(request, "Please configure an active LLM provider before testing.")
+            return redirect("accounts:settings")
+        provider = config.provider
+        model_name = config.model_name
+        api_base = config.api_base
+        consent_given = config.consent_given
+        api_key = config.api_key
+
+    if provider == "none" or not model_name:
         messages.warning(request, "Please configure an active LLM provider before testing.")
         return redirect("accounts:settings")
-    if not config.consent_given:
+    if not consent_given:
         messages.warning(request, "Consent must be granted before connecting to external LLMs.")
         return redirect("accounts:settings")
 
@@ -65,13 +84,13 @@ def test_llm_connection_view(request):
     success, response_text = generate_reflection(
         user_context_markdown="Ping test connection from PrioritySuite settings.",
         user_prompt="Reply with exactly: 'PrioritySuite thinking partner connection verified.'",
-        provider=config.provider,
-        model_name=config.model_name,
-        api_key=config.api_key,
-        api_base=config.api_base,
+        provider=provider,
+        model_name=model_name,
+        api_key=api_key,
+        api_base=api_base,
     )
     if success:
-        messages.success(request, f"Connection verified successfully! ({config.provider}: {config.model_name})")
+        messages.success(request, f"Connection verified successfully! ({provider}: {model_name})")
     else:
         messages.error(request, f"Connection failed: {response_text}")
     return redirect("accounts:settings")

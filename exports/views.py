@@ -23,13 +23,17 @@ def export_framework_view(request, framework_id):
     all_domains = framework.domains.all()
     all_decisions = DecisionRecord.objects.filter(framework=framework)
 
+    domains_filter_active = "domains" in request.GET
     selected_domain_raw = request.GET.getlist("domains")
     selected_decision_raw = request.GET.getlist("decisions")
 
-    try:
-        selected_domain_ids = [int(x) for x in selected_domain_raw if str(x).isdigit()]
-    except (ValueError, TypeError):
-        selected_domain_ids = []
+    if domains_filter_active:
+        try:
+            selected_domain_ids = [int(x) for x in selected_domain_raw if str(x).isdigit()]
+        except (ValueError, TypeError):
+            selected_domain_ids = []
+    else:
+        selected_domain_ids = None
 
     try:
         selected_decision_ids = [int(x) for x in selected_decision_raw if str(x).isdigit()]
@@ -39,7 +43,7 @@ def export_framework_view(request, framework_id):
     md_content = generate_framework_markdown(
         framework,
         include_instructions=include_instructions,
-        selected_domain_ids=selected_domain_ids if selected_domain_ids else None,
+        selected_domain_ids=selected_domain_ids,
         selected_decision_ids=selected_decision_ids if selected_decision_ids else None,
         include_reflections=include_reflections,
     )

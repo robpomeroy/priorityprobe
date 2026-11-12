@@ -702,6 +702,17 @@ def test_domain_and_why_reordering(client, user, other_user, framework, domain):
     client.force_login(other_user)
     assert client.post(f"/frameworks/why/{why1.id}/move/down/").status_code == 404
 
+    # Both domains starting with default order 0: moving up does not produce negative display_order
+    client.force_login(user)
+    d_zero_a = Domain.objects.create(framework=framework, name="Zero A", display_order=0)
+    d_zero_b = Domain.objects.create(framework=framework, name="Zero B", display_order=0)
+    client.post(f"/frameworks/domain/{d_zero_b.id}/move/up/")
+    d_zero_a.refresh_from_db()
+    d_zero_b.refresh_from_db()
+    assert d_zero_a.display_order >= 0
+    assert d_zero_b.display_order >= 0
+    assert d_zero_b.display_order < d_zero_a.display_order
+
 
 def test_objective_and_goal_status_updates(client, user, other_user, objective, goal):
     client.force_login(user)
@@ -735,6 +746,15 @@ def test_objective_and_goal_status_updates(client, user, other_user, objective, 
     # Cross-user isolation on goal status
     client.force_login(other_user)
     assert client.post(f"/frameworks/goal/{goal.id}/status/", {"status": StatusChoices.ACTIVE}).status_code == 404
+
+    # Open redirect protection: external target is rejected
+    client.force_login(user)
+    resp_open = client.post(f"/frameworks/objective/{objective.id}/status/", {
+        "status": StatusChoices.PAUSED,
+        "next": "https://evil.com/phish"
+    })
+    assert resp_open.status_code == 302
+    assert "evil.com" not in resp_open.url
 
 
 def test_review_cadence_and_mark_all(client, user, framework, objective, goal):
@@ -831,6 +851,15 @@ def test_priority_comparison_view(client, user, framework, domain, objective, go
         assert resp_reflect.context["comparison_reflection"] == "Comparison reflection from AI"
         assert LLMReflectionLog.objects.filter(framework=framework, llm_response="Comparison reflection from AI").exists()
 
+    # POST action=convert_to_decision with type=goals in request body (without query param)
+    resp_convert_goal = client.post(f"/decisions/compare/{framework.id}/", {
+        "action": "convert_to_decision",
+        "type": "goals",
+        "selected": [str(goal.id), str(goal2.id)],
+    })
+    assert resp_convert_goal.status_code == 302
+    assert DecisionRecord.objects.filter(framework=framework, supporting_objectives=objective).exists()
+
 
 def test_llm_test_connection_endpoint(client, user):
     client.force_login(user)
@@ -862,6 +891,20 @@ def test_llm_test_connection_endpoint(client, user):
         resp_err = client.post("/accounts/settings/test-llm/")
         assert resp_err.status_code == 302
         assert resp_err.url == "/accounts/settings/"
+
+    # 5. Testing unsaved form POST values (e.g. changing provider/key in form before clicking Test)
+    with patch("llm.service.generate_reflection", return_value=(True, "Verified unsaved settings")) as mock_test_gen:
+        resp_unsaved = client.post("/accounts/settings/test-llm/", {
+            "provider": "openrouter",
+            "model_name": "openrouter/anthropic/claude-3.5-sonnet",
+            "api_base": "https://openrouter.ai/api/v1",
+            "consent_given": "on",
+            "raw_api_key": "sk-new-key",
+        })
+        assert resp_unsaved.status_code == 302
+        assert mock_test_gen.called
+        assert mock_test_gen.call_args[1]["provider"] == "openrouter"
+        assert mock_test_gen.call_args[1]["api_key"] == "sk-new-key"
 
 
 def test_selective_markdown_export_builder(client, user, framework, domain, objective, goal):
@@ -912,6 +955,12 @@ def test_selective_markdown_export_builder(client, user, framework, domain, obje
     assert "text/markdown" in resp_dl["Content-Type"]
     assert "attachment" in resp_dl["Content-Disposition"]
 
+    # Explicit empty domain filter (domains query param present but empty)
+    resp_empty_domains = client.get(f"/exports/framework/{framework.id}/?domains=")
+    assert resp_empty_domains.status_code == 200
+    assert "Work & Vocation" not in resp_empty_domains.context["markdown_content"]
+    assert "Finance" not in resp_empty_domains.context["markdown_content"]
+
 
 def test_llm_chat_context_and_history(client, user, framework, domain, objective):
     config, _ = UserLLMConfig.objects.get_or_create(user=user)
@@ -942,6 +991,16 @@ def test_llm_chat_context_and_history(client, user, framework, domain, objective
 
         # Reflection log was created
         assert LLMReflectionLog.objects.filter(framework=framework, llm_response="Guided advice on tradeoffs").exists()
+
+    # All domains unchecked (context filter active with 0 domains selected)
+    with patch("llm.views.generate_reflection", return_value=(True, "Response without domains")) as mock_no_dom:
+        resp_no_dom = client.post(f"/llm/framework/{framework.id}/chat/", {
+            "prompt": "Evaluate general principles",
+            "context_filter_active": "1",
+        })
+        assert resp_no_dom.status_code == 302
+        context_passed = mock_no_dom.call_args[1]["user_context_markdown"]
+        assert "## Domain: Work & Vocation" not in context_passed
 
     # GET chat view displays reflections and guided modes
     resp_get = client.get(f"/llm/framework/{framework.id}/chat/")
@@ -992,7 +1051,15 @@ def test_llm_api_base_validation():
     assert validate_llm_api_base("gemini", "https://generativelanguage.googleapis.com") == "https://generativelanguage.googleapis.com"
     assert validate_llm_api_base("openrouter", "https://openrouter.ai/api/v1") == "https://openrouter.ai/api/v1"
     assert validate_llm_api_base("none", "http://any-endpoint.com") == "http://any-endpoint.com"
-    assert validate_llm_api_base("ollama", "") == ""
+
+    # In production without allowlist, empty ollama endpoint is rejected
+    with pytest.raises(ValidationError, match="Ollama in production requires an explicit"):
+        validate_llm_api_base("ollama", "")
+
+    # When localhost is explicitly allowlisted
+    from django.conf import settings
+    with patch.object(settings, "OLLAMA_ALLOWED_HOSTS", ["localhost"]):
+        assert validate_llm_api_base("ollama", "") == ""
 
     # Invalid scheme (HTTP when HTTPS required)
     with pytest.raises(ValidationError, match="HTTPS"):
@@ -1024,6 +1091,10 @@ def test_llm_api_base_validation():
     with pytest.raises(ValidationError, match="must use http or https"):
         validate_llm_api_base("custom", "ftp://example.com/v1")
 
+    # Custom provider requires non-empty explicit API base URL
+    with pytest.raises(ValidationError, match="Custom provider requires an explicit API Base URL"):
+        validate_llm_api_base("custom", "")
+
 
 def test_coverage_boosters(user, other_user, framework, domain, why, objective):
     from accounts.forms import is_safe_ollama_endpoint
@@ -1050,17 +1121,25 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
     )
     assert "Reflection" in str(ref)
 
-    # 3. Model normalization and error branches
+    # 3. Model normalization, history ordering, and error branches
     mock_resp = MagicMock()
     mock_choice = MagicMock()
     mock_choice.message.content = "OK"
     mock_resp.choices = [mock_choice]
 
-    with patch("litellm.completion", return_value=mock_resp):
-        assert generate_reflection("ctx", "prompt", "custom", "my-vllm")[0] is True
+    with patch("litellm.completion", return_value=mock_resp) as mock_litellm, \
+         patch("accounts.forms.is_safe_ollama_endpoint", return_value=True):
+        assert generate_reflection("ctx", "prompt", "custom", "my-vllm", api_base="http://localhost:8000")[0] is True
         assert generate_reflection("ctx", "prompt", "gemini", "gemini-1.5-flash")[0] is True
         assert generate_reflection("ctx", "prompt", "anthropic", "claude-3-haiku")[0] is True
         assert generate_reflection("ctx", "prompt", "openai", "gpt-4o")[0] is True
+
+        # Verify history is placed before current prompt
+        generate_reflection("ctx", "latest query", "ollama", "llama3", history=[{"role": "user", "content": "prior turn"}])
+        sent_messages = mock_litellm.call_args[1]["messages"]
+        assert sent_messages[0]["role"] == "system"
+        assert sent_messages[1]["content"] == "prior turn"
+        assert "latest query" in sent_messages[2]["content"]
 
     # Disabled / none provider
     assert generate_reflection("ctx", "prompt", "none", "any")[0] is False
@@ -1069,7 +1148,8 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
     assert generate_reflection("ctx", "prompt", "openai", "gpt-4o", api_base="http://api.openai.com/v1")[0] is False
 
     # LiteLLM exception handling
-    with patch("litellm.completion", side_effect=RuntimeError("API down")):
+    with patch("litellm.completion", side_effect=RuntimeError("API down")), \
+         patch("accounts.forms.is_safe_ollama_endpoint", return_value=True):
         ok, err = generate_reflection("ctx", "prompt", "ollama", "llama3")
         assert ok is False
         assert "API down" in err

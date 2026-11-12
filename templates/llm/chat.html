@@ -47,6 +47,7 @@
                                 </h2>
                                 <div id="collapseContext" class="accordion-collapse collapse" data-bs-parent="#contextOptionsAccordion">
                                     <div class="accordion-body p-3 small">
+                                        <input type="hidden" name="context_filter_active" value="1">
                                         <div class="mb-2 fw-bold text-muted">Include Domains:</div>
                                         <div class="d-flex flex-wrap gap-2 mb-3">
                                             {% for d in all_domains %}
@@ -78,9 +79,10 @@
 
                                         <div class="mt-3">
                                             <button class="btn btn-sm btn-link text-muted p-0 text-decoration-none" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePreview">
-                                                🔍 Inspect Full Context Payload Markdown
+                                                🔍 Baseline Context Preview (All Domains & Facilitator Prompt)
                                             </button>
                                             <div class="collapse mt-2" id="collapsePreview">
+                                                <div class="small text-muted mb-1 fst-italic">Note: Unchecking domains or selecting decision records above filters this baseline on submission.</div>
                                                 <pre class="bg-white border rounded p-2 text-muted" style="max-height: 200px; overflow-y: auto; font-size: 0.75rem;">{{ preview_context_md }}</pre>
                                             </div>
                                         </div>

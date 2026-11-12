@@ -13,6 +13,7 @@ app_version: "main"  # or specific branch/tag e.g. "feat-phase-1"
 server_domain: "priorities.example.com"
 server_admin_email: "admin@example.com"
 enable_ssl: true
+generate_self_signed_cert: false  # Set to true ONLY for local staging/evaluation. Production requires trusted certs.
 ssl_cert_path: "/etc/pki/tls/certs/prioritysuite.crt"
 ssl_key_path: "/etc/pki/tls/private/prioritysuite.key"
 

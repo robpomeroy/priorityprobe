@@ -26,19 +26,23 @@ def chat_view(request, framework_id):
             return redirect("llm:chat", framework_id=framework.id)
 
         # User-selected context filters
+        domains_filter_active = "context_filter_active" in request.POST or "selected_domains" in request.POST
         selected_domain_raw = request.POST.getlist("selected_domains")
         selected_decision_raw = request.POST.getlist("selected_decisions")
         include_history = request.POST.get("include_history") == "1"
 
-        try:
-            selected_domain_ids = [int(x) for x in selected_domain_raw if str(x).isdigit()]
-        except (ValueError, TypeError):
-            selected_domain_ids = []
+        if domains_filter_active:
+            try:
+                selected_domain_ids = [int(x) for x in selected_domain_raw if str(x).isdigit()]
+            except (ValueError, TypeError):
+                selected_domain_ids = []
+        else:
+            selected_domain_ids = None
 
         context_md = generate_framework_markdown(
             framework,
             include_instructions=True,
-            selected_domain_ids=selected_domain_ids if selected_domain_ids else None
+            selected_domain_ids=selected_domain_ids
         )
 
         if selected_decision_raw:

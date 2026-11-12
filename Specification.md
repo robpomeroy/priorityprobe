@@ -495,7 +495,7 @@ A local installation should remain useful without an LLM connection. LLM
 features should be an enhancement, not a requirement for using the
 framework.
 
-### 8.4 Demo system and ephemeral sandbox mode
+### 8.3 Demo system and ephemeral sandbox mode
 
 For publicly accessible evaluation instances, the software should support a dedicated demonstration mode:
 
@@ -504,7 +504,7 @@ For publicly accessible evaluation instances, the software should support a dedi
 3.  **Periodic scheduled reset:** To prevent data accumulation or inappropriate modifications by public visitors, the application should support an automated periodic refresh mechanism (e.g., a management command executed via systemd timer or cron) that safely purges visitor changes and restores the sample framework baseline.
 4.  **Security boundaries:** Demo mode instances must disable administrative account elevation from the web UI and prevent external SSRF or unauthenticated credential exposure.
 
-### 8.5 Initial data model
+### 8.4 Initial data model
 
 The initial database model should be deliberately small.
 

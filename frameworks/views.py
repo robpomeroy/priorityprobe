@@ -3,6 +3,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import HttpResponse, HttpResponseForbidden
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from frameworks.models import Framework, Domain, Why, Objective, Goal, StatusChoices
 from frameworks.forms import FrameworkForm, DomainForm, WhyForm, ObjectiveForm, GoalForm
 from frameworks.services import seed_sample_framework, remove_sample_frameworks
@@ -224,20 +225,18 @@ def domain_move_view(request, domain_id, direction):
     all_domains = list(fw.domains.order_by("display_order", "id"))
     idx = all_domains.index(domain)
 
+    target_idx = None
     if direction == "up" and idx > 0:
-        prev_domain = all_domains[idx - 1]
-        domain.display_order, prev_domain.display_order = prev_domain.display_order, domain.display_order
-        if domain.display_order == prev_domain.display_order:
-            domain.display_order -= 1
-        domain.save()
-        prev_domain.save()
+        target_idx = idx - 1
     elif direction == "down" and idx < len(all_domains) - 1:
-        next_domain = all_domains[idx + 1]
-        domain.display_order, next_domain.display_order = next_domain.display_order, domain.display_order
-        if domain.display_order == next_domain.display_order:
-            domain.display_order += 1
-        domain.save()
-        next_domain.save()
+        target_idx = idx + 1
+
+    if target_idx is not None:
+        all_domains[idx], all_domains[target_idx] = all_domains[target_idx], all_domains[idx]
+        for new_order, d in enumerate(all_domains, start=1):
+            if d.display_order != new_order:
+                d.display_order = new_order
+                d.save(update_fields=["display_order"])
 
     return redirect("frameworks:workspace_detail", framework_id=fw.id)
 
@@ -249,20 +248,18 @@ def why_move_view(request, why_id, direction):
     all_whys = list(why.domain.whys.order_by("display_order", "id"))
     idx = all_whys.index(why)
 
+    target_idx = None
     if direction == "up" and idx > 0:
-        prev_why = all_whys[idx - 1]
-        why.display_order, prev_why.display_order = prev_why.display_order, why.display_order
-        if why.display_order == prev_why.display_order:
-            why.display_order -= 1
-        why.save()
-        prev_why.save()
+        target_idx = idx - 1
     elif direction == "down" and idx < len(all_whys) - 1:
-        next_why = all_whys[idx + 1]
-        why.display_order, next_why.display_order = next_why.display_order, why.display_order
-        if why.display_order == next_why.display_order:
-            why.display_order += 1
-        why.save()
-        next_why.save()
+        target_idx = idx + 1
+
+    if target_idx is not None:
+        all_whys[idx], all_whys[target_idx] = all_whys[target_idx], all_whys[idx]
+        for new_order, w in enumerate(all_whys, start=1):
+            if w.display_order != new_order:
+                w.display_order = new_order
+                w.save(update_fields=["display_order"])
 
     return redirect("frameworks:workspace_detail", framework_id=why.domain.framework_id)
 
@@ -277,7 +274,7 @@ def objective_status_view(request, objective_id):
         obj.save()
         messages.success(request, f"Objective status changed to {obj.get_status_display()}.")
     next_url = request.POST.get("next") or request.META.get("HTTP_REFERER")
-    if next_url:
+    if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
         return redirect(next_url)
     return redirect("frameworks:workspace_detail", framework_id=obj.primary_domain.framework_id)
 
@@ -292,7 +289,7 @@ def goal_status_view(request, goal_id):
         goal.save()
         messages.success(request, f"Goal status changed to {goal.get_status_display()}.")
     next_url = request.POST.get("next") or request.META.get("HTTP_REFERER")
-    if next_url:
+    if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
         return redirect(next_url)
     return redirect("frameworks:workspace_detail", framework_id=goal.primary_domain.framework_id)
 

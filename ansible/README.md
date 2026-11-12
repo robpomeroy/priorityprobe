@@ -89,4 +89,7 @@ ansible-playbook -i inventory.ini deploy.yml
 - **Dedicated System User:** PrioritySuite runs under an unprivileged `prioritysuite` system user.
 - **SELinux Enforcing:** Apache is permitted to proxy upstream traffic via the persistent `httpd_can_network_connect` boolean, and static files are labeled with `httpd_sys_content_t`.
 - **Firewalld:** Only HTTP (80), HTTPS (443), and SSH (22) ports are exposed. MariaDB and Gunicorn listen exclusively on loopback interfaces.
-- **Secure Reverse Proxy Headers:** Apache injects `X-Forwarded-Proto: https`, which matches Django's `SECURE_PROXY_SSL_HEADER` so session and CSRF cookies are strictly marked `Secure`.
+- **TLS Key Protection & Certificates:** Private keys are locked to `0600` root-only access. Production deployments require valid operator certificates (e.g. via Certbot / Let's Encrypt or corporate CA); `generate_self_signed_cert: true` is strictly intended for initial offline staging.
+- **Credential Protection:** Sensitive database user creation tasks use `no_log: true` to prevent secrets exposure in Ansible output. Production passwords should be encrypted with `ansible-vault`.
+- **Host Key Verification:** SSH host-key verification is enabled by default (`host_key_checking = True`) in `ansible.cfg` to prevent MITM attacks.
+- **Secure Reverse Proxy Headers:** Apache injects `X-Forwarded-Proto: https`, which matches Django's `SECURE_PROXY_SSL_HEADER` so session and CSRF cookies are strictly marked `Secure`. Plaintext port 80 redirects securely to the configured domain.

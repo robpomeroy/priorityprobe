@@ -47,7 +47,15 @@ def is_safe_ollama_endpoint(hostname: str) -> bool:
     return True
 
 def validate_llm_api_base(provider: str, api_base: str):
-    if not api_base or provider == "none":
+    if provider == "none":
+        return api_base
+    
+    if not api_base:
+        if provider == "custom":
+            raise ValidationError("Custom provider requires an explicit API Base URL.")
+        if provider == "ollama":
+            if not is_safe_ollama_endpoint("localhost"):
+                raise ValidationError("Ollama in production requires an explicit, allowlisted API Base URL.")
         return api_base
     
     parsed = urlparse(api_base)
@@ -143,9 +151,9 @@ class UserLLMConfigForm(forms.ModelForm):
         cleaned_data = super().clean()
         provider = cleaned_data.get("provider")
         api_base = cleaned_data.get("api_base")
-        if provider and api_base:
+        if provider:
             try:
-                validate_llm_api_base(provider, api_base)
+                validate_llm_api_base(provider, api_base or "")
             except ValidationError as e:
                 self.add_error("api_base", e)
         return cleaned_data

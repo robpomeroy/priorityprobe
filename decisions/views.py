@@ -131,7 +131,7 @@ def decision_compare_view(request, framework_id=None):
     all_objectives = Objective.objects.filter(primary_domain__framework=framework).select_related("primary_domain").prefetch_related("whys", "related_domains")
     all_goals = Goal.objects.filter(primary_domain__framework=framework).select_related("primary_domain").prefetch_related("objectives", "related_domains")
 
-    compare_type = request.GET.get("type", "objectives")
+    compare_type = request.POST.get("type") or request.GET.get("type", "objectives")
     selected_raw = request.GET.getlist("selected") or request.POST.getlist("selected")
     try:
         selected_ids = [int(x) for x in selected_raw if str(x).isdigit()]
