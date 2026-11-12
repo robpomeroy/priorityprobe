@@ -113,7 +113,7 @@ This provisions:
 - **Gunicorn** managed by `systemd`.
 - **MariaDB** configured with database, user, and security hardening.
 - **Firewalld** configured for HTTP (80) and HTTPS (443).
-- Automatic TLS certificate handling.
+- **TLS configuration:** Verifies operator-supplied TLS certificates in production (with optional self-signed generation for development/evaluation environments). For automated certificate issuance and renewals on production servers, Certbot / ACME is recommended.
 
 ### Fast Application Updates
 When deploying new code or database migrations:

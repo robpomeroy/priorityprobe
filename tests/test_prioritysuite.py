@@ -906,6 +906,15 @@ def test_llm_test_connection_endpoint(client, user):
         assert mock_test_gen.call_args[1]["provider"] == "openrouter"
         assert mock_test_gen.call_args[1]["api_key"] == "sk-new-key"
 
+    # 6. Reject unknown / invalid provider in POST
+    resp_invalid_prov = client.post("/accounts/settings/test-llm/", {
+        "provider": "malicious_unsupported_provider",
+        "model_name": "test-model",
+        "consent_given": "on",
+    })
+    assert resp_invalid_prov.status_code == 302
+    assert resp_invalid_prov.url == "/accounts/settings/"
+
 
 def test_selective_markdown_export_builder(client, user, framework, domain, objective, goal):
     from frameworks.models import Domain, Why
@@ -960,6 +969,7 @@ def test_selective_markdown_export_builder(client, user, framework, domain, obje
     assert resp_empty_domains.status_code == 200
     assert "Work & Vocation" not in resp_empty_domains.context["markdown_content"]
     assert "Finance" not in resp_empty_domains.context["markdown_content"]
+    assert resp_empty_domains.context["selected_domain_ids"] == []
 
 
 def test_llm_chat_context_and_history(client, user, framework, domain, objective):
@@ -1108,6 +1118,10 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
     assert is_safe_ollama_endpoint("192.168.1.1") is False
     assert is_safe_ollama_endpoint("169.254.1.1") is False
     assert is_safe_ollama_endpoint("invalid.host.that.does.not.exist") is False
+
+    import socket
+    with patch("socket.getaddrinfo", return_value=[(socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("::1", 0, 0, 0))]):
+        assert is_safe_ollama_endpoint("malicious-ipv6.internal") is False
 
     # 2. String representations
     dec = DecisionRecord.objects.create(framework=framework, title="Str Test", proposal_description="Desc")

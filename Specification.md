@@ -615,7 +615,7 @@ that it is useful in everyday decision-making.
 
 ### 11.2 Defer until later
 
--   Automated public demo system with periodic reset timers (specified in §8.4; implementation deferred to a post-MVP phase).
+-   Automated public demo system with periodic reset timers (specified in §8.3; implementation deferred to a post-MVP phase).
 -   Complex visualisations and relationship diagrams.
 -   Numerical scoring and weighted-priority calculations.
 -   Advanced analytics and reporting.

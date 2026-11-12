@@ -73,7 +73,8 @@ def test_llm_connection_view(request):
         consent_given = config.consent_given
         api_key = config.api_key
 
-    if provider == "none" or not model_name:
+    valid_providers = {choice[0] for choice in UserLLMConfig.PROVIDER_CHOICES if choice[0] != "none"}
+    if provider not in valid_providers or not model_name:
         messages.warning(request, "Please configure an active LLM provider before testing.")
         return redirect("accounts:settings")
     if not consent_given:

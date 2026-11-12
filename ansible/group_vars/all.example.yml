@@ -8,6 +8,7 @@ app_group: prioritysuite
 app_root: /var/www/prioritysuite
 app_repo: "https://github.com/robpomeroy/priorityprobe.git"
 app_version: "main"  # or specific branch/tag e.g. "feat-phase-1"
+python_executable: "/usr/bin/python3.11"  # Python 3.10+ required for Django 5.x on RHEL 9
 
 # Domain & Web Proxy
 server_domain: "priorities.example.com"

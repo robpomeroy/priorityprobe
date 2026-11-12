@@ -33,14 +33,19 @@ def is_safe_ollama_endpoint(hostname: str) -> bool:
         if ip.is_private or ip.is_link_local or ip.is_reserved or ip.is_multicast:
             return False
     except ValueError:
-        # Resolve hostname to check destination IP
+        # Resolve hostname to check destination IPs across both IPv4 and IPv6
         try:
-            resolved_ip_str = socket.gethostbyname(hostname)
-            resolved_ip = ipaddress.ip_address(resolved_ip_str)
-            if resolved_ip.is_loopback:
-                return bool(getattr(settings, "DEBUG", False))
-            if resolved_ip.is_private or resolved_ip.is_link_local or resolved_ip.is_reserved:
+            addr_infos = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC)
+            if not addr_infos:
                 return False
+            for family, socktype, proto, canonname, sockaddr in addr_infos:
+                addr_str = sockaddr[0]
+                resolved_ip = ipaddress.ip_address(addr_str)
+                if resolved_ip.is_loopback:
+                    if not getattr(settings, "DEBUG", False):
+                        return False
+                elif resolved_ip.is_private or resolved_ip.is_link_local or resolved_ip.is_reserved or resolved_ip.is_multicast:
+                    return False
         except Exception:
             return False
 

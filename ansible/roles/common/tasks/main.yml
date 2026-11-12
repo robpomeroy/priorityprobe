@@ -4,9 +4,9 @@
     name:
       - epel-release
       - git
-      - python3
-      - python3-pip
-      - python3-devel
+      - python3.11
+      - python3.11-pip
+      - python3.11-devel
       - gcc
       - mariadb-devel
       - firewalld
@@ -21,13 +21,14 @@
     state: started
     enabled: true
 
-- name: Allow HTTP and HTTPS through firewalld
+- name: Allow SSH, HTTP, and HTTPS through firewalld
   ansible.posix.firewalld:
     service: "{{ item }}"
     permanent: true
     state: enabled
     immediate: true
   loop:
+    - ssh
     - http
     - https
 

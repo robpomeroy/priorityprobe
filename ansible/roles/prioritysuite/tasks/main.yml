@@ -19,7 +19,7 @@
   ansible.builtin.pip:
     requirements: "{{ app_root }}/requirements.txt"
     virtualenv: "{{ app_root }}/.venv"
-    virtualenv_command: /usr/bin/python3 -m venv
+    virtualenv_command: "{{ python_executable | default('/usr/bin/python3.11') }} -m venv"
     extra_args: "--upgrade"
   become_user: "{{ app_user }}"
 

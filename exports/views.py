@@ -65,7 +65,7 @@ def export_framework_view(request, framework_id):
         "framework": framework,
         "all_domains": all_domains,
         "all_decisions": all_decisions,
-        "selected_domain_ids": selected_domain_ids or list(all_domains.values_list("id", flat=True)),
+        "selected_domain_ids": list(all_domains.values_list("id", flat=True)) if selected_domain_ids is None else selected_domain_ids,
         "selected_decision_ids": selected_decision_ids,
         "include_instructions": include_instructions,
         "include_reflections": include_reflections,
