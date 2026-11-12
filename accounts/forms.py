@@ -18,8 +18,11 @@ def is_safe_ollama_endpoint(hostname: str) -> bool:
     specifically configured in settings.OLLAMA_ALLOWED_HOSTS.
     """
     allowlist = getattr(settings, "OLLAMA_ALLOWED_HOSTS", None)
-    if allowlist is not None and hostname in allowlist:
-        return True
+    if allowlist is not None:
+        if hostname in allowlist:
+            return True
+        if "localhost" in allowlist and hostname in ("127.0.0.1", "::1", "0:0:0:0:0:0:0:1"):
+            return True
 
     # In local development (DEBUG=True), allow localhost and 127.0.0.1 by default
     if getattr(settings, "DEBUG", False):

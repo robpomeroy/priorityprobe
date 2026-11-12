@@ -1,8 +1,9 @@
 ---
-- name: Fast Application Update for PrioritySuite
+- name: Rolling Application Update for PrioritySuite
   hosts: prioritysuite_servers
   become: true
   gather_facts: false
+  serial: 1
 
   tasks:
     - name: Pull latest code from repository
@@ -16,6 +17,8 @@
     - name: Install and update Python virtualenv dependencies
       ansible.builtin.pip:
         requirements: "{{ app_root }}/requirements.txt"
+        name:
+          - mysqlclient
         virtualenv: "{{ app_root }}/.venv"
         virtualenv_command: "{{ python_executable | default('/usr/bin/python3.11') }} -m venv"
       become_user: "{{ app_user }}"
@@ -41,3 +44,13 @@
         name: "{{ app_name }}"
         state: restarted
         daemon_reload: true
+
+    - name: Verify application service health and readiness before proceeding
+      ansible.builtin.uri:
+        url: "http://{{ gunicorn_bind | default('127.0.0.1:8000') }}/accounts/login/"
+        status_code: 200
+        timeout: 10
+      register: health_check
+      until: health_check.status == 200
+      retries: 5
+      delay: 2

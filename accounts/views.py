@@ -26,12 +26,16 @@ def register_view(request):
 def settings_view(request):
     config, _ = UserLLMConfig.objects.get_or_create(user=request.user)
     if request.method == "POST":
+        old_provider = config.provider
         form = UserLLMConfigForm(request.POST, instance=config)
         if form.is_valid():
             cfg = form.save(commit=False)
             new_key = form.cleaned_data.get("raw_api_key")
             if new_key:
                 cfg.api_key = new_key
+            elif cfg.provider != old_provider:
+                # Do not retain previous provider's key when provider changes
+                cfg.api_key = ""
             cfg.save()
             messages.success(request, "Settings updated successfully.")
             return redirect("accounts:settings")
@@ -62,7 +66,8 @@ def test_llm_connection_view(request):
         api_base = request.POST.get("api_base", "").strip()
         consent_given = request.POST.get("consent_given") in ("on", "true", "1", True)
         raw_key = request.POST.get("raw_api_key", "").strip()
-        api_key = raw_key or (config.api_key if config else "")
+        # Only reuse saved key if submitted provider matches the saved provider
+        api_key = raw_key or (config.api_key if (config and config.provider == provider) else "")
     else:
         if not config:
             messages.warning(request, "Please configure an active LLM provider before testing.")

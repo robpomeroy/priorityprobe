@@ -72,7 +72,7 @@ def generate_reflection(
 
     # Normalize model prefix for LiteLLM routing
     normalized_model = model_name.strip()
-    if provider == "custom" and not (normalized_model.startswith("openai/") or "/" in normalized_model):
+    if provider == "custom" and not normalized_model.startswith("openai/"):
         normalized_model = f"openai/{normalized_model}"
     elif provider == "gemini" and not normalized_model.startswith("gemini/"):
         normalized_model = f"gemini/{normalized_model}"
@@ -81,7 +81,7 @@ def generate_reflection(
     elif provider == "openai" and not (normalized_model.startswith("openai/") or "/" in normalized_model):
         normalized_model = f"openai/{normalized_model}"
 
-    # Validate api_base to prevent SSRF
+    # Validate api_base to prevent SSRF and DNS rebinding
     resolved_api_base = api_base
     if not resolved_api_base and provider == "ollama":
         resolved_api_base = "http://localhost:11434"
@@ -93,6 +93,40 @@ def generate_reflection(
             validate_llm_api_base(provider, resolved_api_base or "")
         except ValidationError as e:
             return False, f"Invalid API base URL: {'; '.join(e.messages)}"
+
+    pinned_api_base = resolved_api_base
+    extra_headers = {}
+
+    if resolved_api_base and provider in ("ollama", "custom"):
+        import ipaddress
+        import socket
+        from urllib.parse import urlparse, urlunparse
+        from accounts.forms import is_safe_ollama_endpoint
+
+        parsed = urlparse(resolved_api_base)
+        host_str = parsed.hostname or ""
+        port = parsed.port
+
+        try:
+            addr_infos = socket.getaddrinfo(host_str, port or 80, socket.AF_UNSPEC)
+            if not addr_infos:
+                return False, f"Could not resolve destination host '{host_str}'."
+
+            resolved_ips = []
+            for family, socktype, proto, canonname, sockaddr in addr_infos:
+                ip_str = sockaddr[0]
+                if not is_safe_ollama_endpoint(ip_str):
+                    return False, f"Outbound connection blocked: destination {ip_str} is private or restricted."
+                resolved_ips.append(ip_str)
+
+            safe_ip = resolved_ips[0]
+            safe_ip_formatted = f"[{safe_ip}]" if ":" in safe_ip else safe_ip
+            pinned_netloc = f"{safe_ip_formatted}:{port}" if port else safe_ip_formatted
+            pinned_api_base = urlunparse(parsed._replace(netloc=pinned_netloc))
+            if host_str and host_str != safe_ip:
+                extra_headers["Host"] = host_str
+        except Exception as exc:
+            return False, f"Destination safety check failed: {str(exc)}"
 
     # Format messages: system -> previous conversation history -> current prompt
     messages = [
@@ -117,8 +151,11 @@ def generate_reflection(
     if api_key:
         kwargs["api_key"] = api_key
 
-    if api_base:
-        kwargs["api_base"] = api_base
+    if pinned_api_base:
+        kwargs["api_base"] = pinned_api_base
+
+    if extra_headers:
+        kwargs["extra_headers"] = extra_headers
 
     try:
         response = litellm.completion(**kwargs)

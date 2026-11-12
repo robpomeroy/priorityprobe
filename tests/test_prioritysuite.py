@@ -915,6 +915,34 @@ def test_llm_test_connection_endpoint(client, user):
     assert resp_invalid_prov.status_code == 302
     assert resp_invalid_prov.url == "/accounts/settings/"
 
+    # 7. Do not leak stored key when changing providers without a new key
+    config.provider = "openai"
+    config.api_key = "sk-secret-openai-key"
+    config.save()
+
+    with patch("llm.service.generate_reflection", return_value=(True, "OK")) as mock_test_gen2:
+        client.post("/accounts/settings/test-llm/", {
+            "provider": "anthropic",
+            "model_name": "claude-3-haiku",
+            "consent_given": "on",
+            "raw_api_key": "",
+        })
+        assert mock_test_gen2.called
+        assert mock_test_gen2.call_args[1]["api_key"] == ""
+
+    # Settings save clears previous provider's key when provider changes without a new key
+    client.post("/accounts/settings/", {
+        "provider": "anthropic",
+        "model_name": "claude-3-haiku",
+        "api_base": "",
+        "consent_given": "on",
+        "theme_preference": "auto",
+        "raw_api_key": "",
+    })
+    config.refresh_from_db()
+    assert config.provider == "anthropic"
+    assert config.api_key == ""
+
 
 def test_selective_markdown_export_builder(client, user, framework, domain, objective, goal):
     from frameworks.models import Domain, Why
@@ -1148,12 +1176,24 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
         assert generate_reflection("ctx", "prompt", "anthropic", "claude-3-haiku")[0] is True
         assert generate_reflection("ctx", "prompt", "openai", "gpt-4o")[0] is True
 
+        # Custom model containing slashes (e.g. meta-llama/Llama-3-8B-Instruct) gets openai/ prefix
+        generate_reflection("ctx", "prompt", "custom", "meta-llama/Llama-3-8B-Instruct", api_base="http://localhost:8000")
+        assert mock_litellm.call_args[1]["model"] == "openai/meta-llama/Llama-3-8B-Instruct"
+
         # Verify history is placed before current prompt
         generate_reflection("ctx", "latest query", "ollama", "llama3", history=[{"role": "user", "content": "prior turn"}])
         sent_messages = mock_litellm.call_args[1]["messages"]
         assert sent_messages[0]["role"] == "system"
         assert sent_messages[1]["content"] == "prior turn"
         assert "latest query" in sent_messages[2]["content"]
+
+    # DNS rebinding protection: destination resolving to private IP is blocked
+    with patch("accounts.forms.validate_llm_api_base", return_value="https://rebind.attacker.com/v1"), \
+         patch("socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443))]), \
+         patch("accounts.forms.is_safe_ollama_endpoint", side_effect=lambda ip: ip != "10.0.0.1"):
+        success, msg = generate_reflection("ctx", "prompt", "custom", "model", api_base="https://rebind.attacker.com/v1")
+        assert success is False
+        assert "destination 10.0.0.1 is private or restricted" in msg
 
     # Disabled / none provider
     assert generate_reflection("ctx", "prompt", "none", "any")[0] is False
