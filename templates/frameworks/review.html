@@ -3,16 +3,43 @@
 
 {% block content %}
 <div class="row mb-4 align-items-center">
-    <div class="col-md-8">
+    <div class="col-md-7">
         <h2 class="text-terracotta mb-1">Periodic Review</h2>
         <p class="text-muted small mb-0">Examine enduring Whys, update status of Objectives, and review practical Goals.</p>
     </div>
-    <div class="col-md-4 text-md-end mt-3 mt-md-0">
-        <div class="btn-group btn-group-sm">
-            <a href="{% url 'frameworks:review' %}" class="btn {% if not status_filter %}btn-primary bg-terracotta{% else %}btn-outline-secondary{% endif %}">All</a>
-            <a href="{% url 'frameworks:review' %}?status=ACTIVE" class="btn {% if status_filter == 'ACTIVE' %}btn-primary bg-terracotta{% else %}btn-outline-secondary{% endif %}">Active</a>
-            <a href="{% url 'frameworks:review' %}?status=PAUSED" class="btn {% if status_filter == 'PAUSED' %}btn-primary bg-terracotta{% else %}btn-outline-secondary{% endif %}">Paused</a>
-            <a href="{% url 'frameworks:review' %}?status=COMPLETED" class="btn {% if status_filter == 'COMPLETED' %}btn-primary bg-terracotta{% else %}btn-outline-secondary{% endif %}">Completed</a>
+    <div class="col-md-5 text-md-end mt-3 mt-md-0 d-flex flex-wrap justify-content-md-end gap-2 align-items-center">
+        <form method="post" action="{% url 'frameworks:mark_all_reviewed' framework.id %}" class="d-inline" onsubmit="return confirm('Mark all items in this framework as reviewed today?');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-outline-sage">Mark All Reviewed</button>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm border p-3 mb-4 bg-light">
+    <div class="row g-2 align-items-center">
+        <div class="col-auto">
+            <span class="small fw-bold text-muted">Status:</span>
+        </div>
+        <div class="col-auto">
+            <div class="btn-group btn-group-sm">
+                <a href="?{% if age_filter %}age={{ age_filter }}{% endif %}" class="btn {% if not status_filter %}btn-primary bg-terracotta{% else %}btn-outline-secondary{% endif %}">All</a>
+                <a href="?status=ACTIVE{% if age_filter %}&age={{ age_filter }}{% endif %}" class="btn {% if status_filter == 'ACTIVE' %}btn-primary bg-terracotta{% else %}btn-outline-secondary{% endif %}">Active</a>
+                <a href="?status=PAUSED{% if age_filter %}&age={{ age_filter }}{% endif %}" class="btn {% if status_filter == 'PAUSED' %}btn-primary bg-terracotta{% else %}btn-outline-secondary{% endif %}">Paused</a>
+                <a href="?status=COMPLETED{% if age_filter %}&age={{ age_filter }}{% endif %}" class="btn {% if status_filter == 'COMPLETED' %}btn-primary bg-terracotta{% else %}btn-outline-secondary{% endif %}">Completed</a>
+                <a href="?status=ABANDONED{% if age_filter %}&age={{ age_filter }}{% endif %}" class="btn {% if status_filter == 'ABANDONED' %}btn-primary bg-terracotta{% else %}btn-outline-secondary{% endif %}">Abandoned</a>
+            </div>
+        </div>
+        <div class="col-auto ms-md-auto">
+            <span class="small fw-bold text-muted">Cadence / Staleness:</span>
+        </div>
+        <div class="col-auto">
+            <div class="btn-group btn-group-sm">
+                <a href="?{% if status_filter %}status={{ status_filter }}{% endif %}" class="btn {% if not age_filter %}btn-primary bg-sage border-0{% else %}btn-outline-secondary{% endif %}">Any Time</a>
+                <a href="?age=never{% if status_filter %}&status={{ status_filter }}{% endif %}" class="btn {% if age_filter == 'never' %}btn-primary bg-sage border-0{% else %}btn-outline-secondary{% endif %}">Never Reviewed</a>
+                <a href="?age=90{% if status_filter %}&status={{ status_filter }}{% endif %}" class="btn {% if age_filter == '90' %}btn-primary bg-sage border-0{% else %}btn-outline-secondary{% endif %}">&gt;90d</a>
+                <a href="?age=180{% if status_filter %}&status={{ status_filter }}{% endif %}" class="btn {% if age_filter == '180' %}btn-primary bg-sage border-0{% else %}btn-outline-secondary{% endif %}">&gt;180d</a>
+                <a href="?age=365{% if status_filter %}&status={{ status_filter }}{% endif %}" class="btn {% if age_filter == '365' %}btn-primary bg-sage border-0{% else %}btn-outline-secondary{% endif %}">&gt;1y</a>
+            </div>
         </div>
     </div>
 </div>
@@ -29,15 +56,14 @@
                     <div class="card card-why p-3 mb-3 border">
                         <div class="d-flex justify-content-between align-items-start">
                             <span class="badge bg-light text-muted border small">{{ why.domain.name }}</span>
-                            <div id="review-why-{{ why.id }}">
+                            <div id="review-why-{{ why.id }}" class="d-flex align-items-center gap-1">
                                 {% if why.last_reviewed_at %}
                                     <span class="badge bg-sage text-white small">Reviewed {{ why.last_reviewed_at }}</span>
-                                {% else %}
-                                    <form method="post" action="{% url 'frameworks:mark_reviewed' 'why' why.id %}" hx-post="{% url 'frameworks:mark_reviewed' 'why' why.id %}" hx-target="#review-why-{{ why.id }}">
-                                        {% csrf_token %}
-                                        <button type="submit" class="btn btn-outline-secondary btn-sm py-0 px-1 small">Mark Reviewed</button>
-                                    </form>
                                 {% endif %}
+                                <form method="post" action="{% url 'frameworks:mark_reviewed' 'why' why.id %}" hx-post="{% url 'frameworks:mark_reviewed' 'why' why.id %}" hx-target="#review-why-{{ why.id }}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-outline-secondary btn-sm py-0 px-1 small">Mark Reviewed</button>
+                                </form>
                             </div>
                         </div>
                         <div class="fw-semibold mt-2">{{ why.title }}</div>
@@ -63,20 +89,29 @@
                     <div class="card card-objective p-3 mb-3 border">
                         <div class="d-flex justify-content-between align-items-start">
                             <span class="badge bg-light text-muted border small">{{ obj.primary_domain.name }}</span>
-                            <div id="review-obj-{{ obj.id }}">
+                            <div id="review-obj-{{ obj.id }}" class="d-flex align-items-center gap-1">
                                 {% if obj.last_reviewed_at %}
                                     <span class="badge bg-sage text-white small">Reviewed {{ obj.last_reviewed_at }}</span>
-                                {% else %}
-                                    <form method="post" action="{% url 'frameworks:mark_reviewed' 'objective' obj.id %}" hx-post="{% url 'frameworks:mark_reviewed' 'objective' obj.id %}" hx-target="#review-obj-{{ obj.id }}">
-                                        {% csrf_token %}
-                                        <button type="submit" class="btn btn-outline-secondary btn-sm py-0 px-1 small">Mark Reviewed</button>
-                                    </form>
                                 {% endif %}
+                                <form method="post" action="{% url 'frameworks:mark_reviewed' 'objective' obj.id %}" hx-post="{% url 'frameworks:mark_reviewed' 'objective' obj.id %}" hx-target="#review-obj-{{ obj.id }}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-outline-secondary btn-sm py-0 px-1 small">Mark Reviewed</button>
+                                </form>
                             </div>
                         </div>
-                        <div class="fw-semibold mt-2 d-flex justify-content-between">
+                        <div class="fw-semibold mt-2 d-flex justify-content-between align-items-center">
                             <span>{{ obj.title }}</span>
-                            <span class="badge bg-secondary-subtle text-secondary small">{{ obj.get_status_display }}</span>
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-outline-secondary py-0 px-2 dropdown-toggle small" data-bs-toggle="dropdown">
+                                    {{ obj.get_status_display }}
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                    <li><form method="post" action="{% url 'frameworks:objective_status' obj.id %}">{% csrf_token %}<input type="hidden" name="status" value="ACTIVE"><button class="dropdown-item small">Mark Active</button></form></li>
+                                    <li><form method="post" action="{% url 'frameworks:objective_status' obj.id %}">{% csrf_token %}<input type="hidden" name="status" value="PAUSED"><button class="dropdown-item small">Mark Paused</button></form></li>
+                                    <li><form method="post" action="{% url 'frameworks:objective_status' obj.id %}">{% csrf_token %}<input type="hidden" name="status" value="COMPLETED"><button class="dropdown-item small">Mark Completed</button></form></li>
+                                    <li><form method="post" action="{% url 'frameworks:objective_status' obj.id %}">{% csrf_token %}<input type="hidden" name="status" value="ABANDONED"><button class="dropdown-item small">Mark Abandoned</button></form></li>
+                                </ul>
+                            </div>
                         </div>
                         {% if obj.description %}
                             <div class="text-muted small mt-1">{{ obj.description }}</div>
@@ -100,20 +135,29 @@
                     <div class="card card-goal p-3 mb-3 border">
                         <div class="d-flex justify-content-between align-items-start">
                             <span class="badge bg-light text-muted border small">{{ goal.primary_domain.name }}</span>
-                            <div id="review-goal-{{ goal.id }}">
+                            <div id="review-goal-{{ goal.id }}" class="d-flex align-items-center gap-1">
                                 {% if goal.last_reviewed_at %}
                                     <span class="badge bg-sage text-white small">Reviewed {{ goal.last_reviewed_at }}</span>
-                                {% else %}
-                                    <form method="post" action="{% url 'frameworks:mark_reviewed' 'goal' goal.id %}" hx-post="{% url 'frameworks:mark_reviewed' 'goal' goal.id %}" hx-target="#review-goal-{{ goal.id }}">
-                                        {% csrf_token %}
-                                        <button type="submit" class="btn btn-outline-secondary btn-sm py-0 px-1 small">Mark Reviewed</button>
-                                    </form>
                                 {% endif %}
+                                <form method="post" action="{% url 'frameworks:mark_reviewed' 'goal' goal.id %}" hx-post="{% url 'frameworks:mark_reviewed' 'goal' goal.id %}" hx-target="#review-goal-{{ goal.id }}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-outline-secondary btn-sm py-0 px-1 small">Mark Reviewed</button>
+                                </form>
                             </div>
                         </div>
-                        <div class="fw-semibold mt-2 d-flex justify-content-between">
+                        <div class="fw-semibold mt-2 d-flex justify-content-between align-items-center">
                             <span>{{ goal.title }}</span>
-                            <span class="badge bg-primary-subtle text-primary small">{{ goal.get_status_display }}</span>
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-outline-secondary py-0 px-2 dropdown-toggle small" data-bs-toggle="dropdown">
+                                    {{ goal.get_status_display }}
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                    <li><form method="post" action="{% url 'frameworks:goal_status' goal.id %}">{% csrf_token %}<input type="hidden" name="status" value="ACTIVE"><button class="dropdown-item small">Mark Active</button></form></li>
+                                    <li><form method="post" action="{% url 'frameworks:goal_status' goal.id %}">{% csrf_token %}<input type="hidden" name="status" value="PAUSED"><button class="dropdown-item small">Mark Paused</button></form></li>
+                                    <li><form method="post" action="{% url 'frameworks:goal_status' goal.id %}">{% csrf_token %}<input type="hidden" name="status" value="COMPLETED"><button class="dropdown-item small">Mark Completed</button></form></li>
+                                    <li><form method="post" action="{% url 'frameworks:goal_status' goal.id %}">{% csrf_token %}<input type="hidden" name="status" value="ABANDONED"><button class="dropdown-item small">Mark Abandoned</button></form></li>
+                                </ul>
+                            </div>
                         </div>
                         {% if goal.target_date %}
                             <div class="small text-muted mt-1">📅 Target: {{ goal.target_date }}</div>

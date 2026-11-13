@@ -8,7 +8,18 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from accounts.models import UserLLMConfig
 
-ALLOWED_PROVIDERS = {"ollama", "openrouter", "none"}
+ALLOWED_PROVIDERS = {"ollama", "openrouter", "openai", "anthropic", "gemini", "custom", "none"}
+
+def _is_ip_address_safe(ip: ipaddress._BaseAddress) -> bool:
+    if hasattr(ip, "ipv4_mapped") and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    if ip.is_unspecified:
+        return False
+    if ip.is_loopback:
+        return bool(getattr(settings, "DEBUG", False))
+    if not ip.is_global or ip.is_private or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+        return False
+    return True
 
 def is_safe_ollama_endpoint(hostname: str) -> bool:
     """
@@ -17,37 +28,49 @@ def is_safe_ollama_endpoint(hostname: str) -> bool:
     In hosted production deployments, loopback/private destinations are blocked unless
     specifically configured in settings.OLLAMA_ALLOWED_HOSTS.
     """
+    target_host = hostname.strip().lower()
     allowlist = getattr(settings, "OLLAMA_ALLOWED_HOSTS", None)
-    if allowlist is not None and hostname in allowlist:
-        return True
+    if allowlist is not None:
+        normalized_allowlist = {h.strip().lower() for h in allowlist if h.strip()}
+        if target_host in normalized_allowlist:
+            return True
+        if "localhost" in normalized_allowlist and target_host in ("127.0.0.1", "::1", "0:0:0:0:0:0:0:1"):
+            return True
 
-    # In local development (DEBUG=True), allow localhost and 127.0.0.1 by default
+    # In local development (DEBUG=True), allow localhost and loopbacks by default
     if getattr(settings, "DEBUG", False):
-        if hostname in ("localhost", "127.0.0.1", "::1"):
+        if target_host in ("localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1"):
             return True
 
     try:
-        ip = ipaddress.ip_address(hostname)
-        if ip.is_loopback:
-            return bool(getattr(settings, "DEBUG", False))
-        if ip.is_private or ip.is_link_local or ip.is_reserved or ip.is_multicast:
-            return False
+        ip = ipaddress.ip_address(target_host)
+        return _is_ip_address_safe(ip)
     except ValueError:
-        # Resolve hostname to check destination IP
+        # Resolve hostname to check destination IPs across both IPv4 and IPv6
         try:
-            resolved_ip_str = socket.gethostbyname(hostname)
-            resolved_ip = ipaddress.ip_address(resolved_ip_str)
-            if resolved_ip.is_loopback:
-                return bool(getattr(settings, "DEBUG", False))
-            if resolved_ip.is_private or resolved_ip.is_link_local or resolved_ip.is_reserved:
+            addr_infos = socket.getaddrinfo(target_host, None, socket.AF_UNSPEC)
+            if not addr_infos:
                 return False
+            for family, socktype, proto, canonname, sockaddr in addr_infos:
+                addr_str = sockaddr[0]
+                resolved_ip = ipaddress.ip_address(addr_str)
+                if not _is_ip_address_safe(resolved_ip):
+                    return False
         except Exception:
             return False
 
     return True
 
 def validate_llm_api_base(provider: str, api_base: str):
-    if not api_base or provider == "none":
+    if provider == "none":
+        return api_base
+    
+    if not api_base:
+        if provider == "custom":
+            raise ValidationError("Custom provider requires an explicit API Base URL.")
+        if provider == "ollama":
+            if not is_safe_ollama_endpoint("localhost"):
+                raise ValidationError("Ollama in production requires an explicit, allowlisted API Base URL.")
         return api_base
     
     parsed = urlparse(api_base)
@@ -66,10 +89,38 @@ def validate_llm_api_base(provider: str, api_base: str):
             raise ValidationError("OpenRouter API Base must point to openrouter.ai (e.g. https://openrouter.ai/api/v1).")
         if parsed.scheme != "https":
             raise ValidationError("OpenRouter connections must use HTTPS.")
-    
-    elif provider == "ollama":
+
+    elif provider == "openai":
+        if hostname not in ("api.openai.com",):
+            raise ValidationError("OpenAI API Base must point to api.openai.com (e.g. https://api.openai.com/v1).")
+        if parsed.scheme != "https":
+            raise ValidationError("OpenAI connections must use HTTPS.")
+
+    elif provider == "anthropic":
+        if hostname not in ("api.anthropic.com",):
+            raise ValidationError("Anthropic API Base must point to api.anthropic.com (e.g. https://api.anthropic.com/v1).")
+        if parsed.scheme != "https":
+            raise ValidationError("Anthropic connections must use HTTPS.")
+
+    elif provider == "gemini":
+        if hostname not in ("generativelanguage.googleapis.com",):
+            raise ValidationError("Google Gemini API Base must point to generativelanguage.googleapis.com.")
+        if parsed.scheme != "https":
+            raise ValidationError("Gemini connections must use HTTPS.")
+
+    elif provider in ("ollama", "custom"):
         if not is_safe_ollama_endpoint(hostname):
-            raise ValidationError("Disallowed Ollama destination: private, link-local, or unresolvable internal hostnames are prohibited.")
+            raise ValidationError(f"Disallowed {provider} destination: private, link-local, or unresolvable internal hostnames are prohibited.")
+        if provider == "custom":
+            is_loopback = hostname in ("localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1")
+            if not is_loopback:
+                try:
+                    if ipaddress.ip_address(hostname).is_loopback:
+                        is_loopback = True
+                except ValueError:
+                    pass
+            if not is_loopback and parsed.scheme != "https":
+                raise ValidationError("Custom remote API base URL must use HTTPS to protect credentials and data.")
 
     return api_base
 
@@ -125,9 +176,9 @@ class UserLLMConfigForm(forms.ModelForm):
         cleaned_data = super().clean()
         provider = cleaned_data.get("provider")
         api_base = cleaned_data.get("api_base")
-        if provider and api_base:
+        if provider:
             try:
-                validate_llm_api_base(provider, api_base)
+                validate_llm_api_base(provider, api_base or "")
             except ValidationError as e:
                 self.add_error("api_base", e)
         return cleaned_data

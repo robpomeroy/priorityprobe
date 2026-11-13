@@ -88,7 +88,42 @@ For hosted, multi-user deployments, the repository includes a complete `docker-c
 
 ---
 
-## 3. Traditional Server Deployment (Pre-Ansible Reference)
+## 3. Automated Provisioning with Ansible (Oracle Linux / RHEL 9 + Apache)
+
+For production deployments on RHEL-family distributions (such as **Oracle Linux 9**, **AlmaLinux 9**, or **Rocky Linux 9**), automated Ansible playbooks are located in `ansible/`:
+
+### Prerequisites on Control Machine
+```bash
+pip install ansible
+ansible-galaxy collection install ansible.posix community.general community.mysql
+```
+
+### Full Provisioning & Deployment
+```bash
+cd ansible
+cp inventory.example.ini inventory.ini
+cp group_vars/all.example.yml group_vars/all.yml
+
+# Edit inventory.ini and group_vars/all.yml with your server details and passwords
+ansible-playbook -i inventory.ini site.yml
+```
+
+This provisions:
+- **Apache (`httpd`)** with `mod_ssl` and `mod_proxy` acting as the reverse proxy (with SELinux `httpd_can_network_connect` enabled).
+- **Gunicorn** managed by `systemd`.
+- **MariaDB** configured with database, user, and security hardening.
+- **Firewalld** configured for HTTP (80) and HTTPS (443).
+- **TLS configuration:** Verifies operator-supplied TLS certificates in production (with optional self-signed generation for development/evaluation environments). For automated certificate issuance and renewals on production servers, Certbot / ACME is recommended.
+
+### Fast Application Updates
+When deploying new code or database migrations:
+```bash
+ansible-playbook -i inventory.ini deploy.yml
+```
+
+---
+
+## 4. Traditional Server Deployment Reference
 
 If deploying to a dedicated Linux server (Ubuntu 22.04/24.04 or AlmaLinux 9/RHEL 9) without Docker:
 

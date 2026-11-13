@@ -18,12 +18,79 @@
                 </p>
 
                 {% if llm_config and llm_config.consent_given and llm_config.provider != 'none' %}
+                    <!-- Guided Facilitator Modes -->
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold text-muted mb-1">Guided Thinking Modes:</label>
+                        <div class="d-flex flex-wrap gap-1">
+                            {% for mode_key, mode in guided_modes.items %}
+                                <button type="button" class="btn btn-sm btn-outline-secondary py-1 px-2 small" onclick="document.getElementById('llm-prompt-area').value = '{{ mode.prompt|escapejs }}';" title="{{ mode.description }}">
+                                    {{ mode.title }}
+                                </button>
+                            {% endfor %}
+                        </div>
+                    </div>
+
                     <form method="post">
                         {% csrf_token %}
                         <div class="mb-3">
                             <label class="form-label small fw-semibold">Your Question or Scenario</label>
-                            <textarea name="prompt" rows="4" class="form-control" placeholder="e.g. Can you review my Whys across Family and Work? Are there any potential contradictions or overlooked areas?" required></textarea>
+                            <textarea id="llm-prompt-area" name="prompt" rows="4" class="form-control" placeholder="Select a guided mode above or ask your own question (e.g. Can you review my Whys across Family and Work? Are there any potential contradictions or overlooked areas?)" required></textarea>
                         </div>
+
+                        <!-- User-Controlled Context Selection -->
+                        <div class="accordion mb-3" id="contextOptionsAccordion">
+                            <div class="accordion-item">
+                                <h2 class="accordion-header" id="headingContext">
+                                    <button class="accordion-button collapsed py-2 small fw-semibold text-muted bg-light" type="button" data-bs-toggle="collapse" data-bs-target="#collapseContext">
+                                        ⚙️ Customize Context Shared with LLM
+                                    </button>
+                                </h2>
+                                <div id="collapseContext" class="accordion-collapse collapse" data-bs-parent="#contextOptionsAccordion">
+                                    <div class="accordion-body p-3 small">
+                                        <input type="hidden" name="context_filter_active" value="1">
+                                        <div class="mb-2 fw-bold text-muted">Include Domains:</div>
+                                        <div class="d-flex flex-wrap gap-2 mb-3">
+                                            {% for d in all_domains %}
+                                                <div class="form-check form-check-inline border rounded px-2 py-1 bg-white">
+                                                    <input class="form-check-input ms-0 me-1" type="checkbox" name="selected_domains" value="{{ d.id }}" id="sel-d-{{ d.id }}" checked>
+                                                    <label class="form-check-label" for="sel-d-{{ d.id }}">{{ d.name }}</label>
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+
+                                        {% if all_decisions %}
+                                            <div class="mb-2 fw-bold text-muted">Include Decision Assessments:</div>
+                                            <div class="d-flex flex-wrap gap-2 mb-3">
+                                                {% for dec in all_decisions %}
+                                                    <div class="form-check form-check-inline border rounded px-2 py-1 bg-white">
+                                                        <input class="form-check-input ms-0 me-1" type="checkbox" name="selected_decisions" value="{{ dec.id }}" id="sel-dec-{{ dec.id }}">
+                                                        <label class="form-check-label" for="sel-dec-{{ dec.id }}">{{ dec.title }}</label>
+                                                    </div>
+                                                {% endfor %}
+                                            </div>
+                                        {% endif %}
+
+                                        <div class="form-check mt-2">
+                                            <input class="form-check-input" type="checkbox" name="include_history" value="1" id="inc-hist" checked>
+                                            <label class="form-check-label text-muted" for="inc-hist">
+                                                Include recent conversation turns for context continuity
+                                            </label>
+                                        </div>
+
+                                        <div class="mt-3">
+                                            <button class="btn btn-sm btn-link text-muted p-0 text-decoration-none" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePreview">
+                                                🔍 Baseline Context Preview (All Domains & Facilitator Prompt)
+                                            </button>
+                                            <div class="collapse mt-2" id="collapsePreview">
+                                                <div class="small text-muted mb-1 fst-italic">Note: Unchecking domains or selecting decision records above filters this baseline on submission.</div>
+                                                <pre class="bg-white border rounded p-2 text-muted" style="max-height: 200px; overflow-y: auto; font-size: 0.75rem;">{{ preview_context_md }}</pre>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="d-flex justify-content-between align-items-center">
                             <span class="small text-muted">Thinking partner acts as a facilitator, not an authority on your values.</span>
                             <button type="submit" class="btn btn-primary bg-sage border-0">Request Perspective</button>
@@ -43,8 +110,14 @@
         {% for ref in reflections %}
             <div class="card shadow-sm border mb-3">
                 <div class="card-header bg-transparent py-2 d-flex justify-content-between align-items-center small">
-                    <span class="fw-semibold">Reflection {{ ref.created_at|date:"M d, Y H:i" }}</span>
-                    <span class="badge bg-light text-muted border small">{{ ref.provider_used }}</span>
+                    <div>
+                        <span class="fw-semibold">Reflection {{ ref.created_at|date:"M d, Y H:i" }}</span>
+                        <span class="badge bg-light text-muted border small ms-2">{{ ref.provider_used }}</span>
+                    </div>
+                    <form method="post" action="{% url 'llm:reflection_delete' ref.id %}" onsubmit="return confirm('Delete this reflection entry?');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-sm btn-link text-danger p-0 text-decoration-none small">Delete</button>
+                    </form>
                 </div>
                 <div class="card-body p-3 small">
                     <div class="fw-bold mb-2">Prompt: {{ ref.user_prompt }}</div>

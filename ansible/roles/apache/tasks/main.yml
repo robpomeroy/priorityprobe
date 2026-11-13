@@ -1,0 +1,111 @@
+---
+- name: Validate SSL requirement for non-localhost environments
+  ansible.builtin.assert:
+    that:
+      - enable_ssl or (server_domain in ['localhost', '127.0.0.1', '::1'])
+    fail_msg: "enable_ssl: false is only supported for local development (localhost / 127.0.0.1). Non-localhost environments must enable SSL."
+
+- name: Install Apache (httpd) and mod_ssl packages
+  ansible.builtin.dnf:
+    name:
+      - httpd
+      - mod_ssl
+    state: present
+
+- name: Enable SELinux boolean to allow Apache to proxy network connections to Gunicorn
+  ansible.posix.seboolean:
+    name: httpd_can_network_connect
+    state: true
+    persistent: true
+
+- name: Allow Apache read access to static files directory under SELinux
+  community.general.sefcontext:
+    target: "{{ app_root }}/staticfiles(/.*)?"
+    setype: httpd_sys_content_t
+    state: present
+  register: static_selinux
+
+- name: Apply updated SELinux file contexts to staticfiles directory
+  ansible.builtin.command:
+    cmd: "restorecon -R -v {{ app_root }}/staticfiles"
+  when: static_selinux.changed
+
+- name: Verify operator-supplied SSL certificate and key exist in production
+  when: enable_ssl and not (generate_self_signed_cert | default(false))
+  block:
+    - name: Check for SSL certificate
+      ansible.builtin.stat:
+        path: "{{ ssl_cert_path }}"
+      register: prod_cert_stat
+
+    - name: Check for SSL private key
+      ansible.builtin.stat:
+        path: "{{ ssl_key_path }}"
+      register: prod_key_stat
+
+    - name: Fail if production SSL certificates are missing
+      ansible.builtin.fail:
+        msg: >
+          SSL is enabled but certificate ({{ ssl_cert_path }}) or key ({{ ssl_key_path }}) is missing.
+          Provide trusted production certificates (e.g. via certbot/ACME), or explicitly set 'generate_self_signed_cert: true' for staging/dev only.
+      when: not (prod_cert_stat.stat.exists and prod_key_stat.stat.exists)
+
+- name: Development / Staging self-signed certificate generation
+  when: enable_ssl and (generate_self_signed_cert | default(false))
+  block:
+    - name: Ensure SSL certificate directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - "{{ ssl_cert_path | dirname }}"
+        - "{{ ssl_key_path | dirname }}"
+
+    - name: Check if SSL private key already exists
+      ansible.builtin.stat:
+        path: "{{ ssl_key_path }}"
+      register: dev_key_stat
+
+    - name: Generate self-signed TLS certificate for local / initial development
+      ansible.builtin.command:
+        cmd: >
+          openssl req -x509 -nodes -days 365 -newkey rsa:2048
+          -keyout {{ ssl_key_path }}
+          -out {{ ssl_cert_path }}
+          -subj "/CN={{ server_domain }}"
+      when: not dev_key_stat.stat.exists
+
+- name: Ensure restrictive permissions on SSL private key and certificate
+  when: enable_ssl
+  block:
+    - name: Restrict TLS private key permissions to root-only (0600)
+      ansible.builtin.file:
+        path: "{{ ssl_key_path }}"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Ensure TLS certificate permissions (0644)
+      ansible.builtin.file:
+        path: "{{ ssl_cert_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+
+- name: Deploy Apache VirtualHost configuration
+  ansible.builtin.template:
+    src: prioritysuite.conf.j2
+    dest: /etc/httpd/conf.d/prioritysuite.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Apache
+
+- name: Enable and start Apache service (httpd)
+  ansible.builtin.systemd:
+    name: httpd
+    state: started
+    enabled: true

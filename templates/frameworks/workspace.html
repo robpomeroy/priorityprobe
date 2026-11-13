@@ -62,16 +62,26 @@
                             <p class="text-muted small mb-0 mt-1">{{ domain.description }}</p>
                         {% endif %}
                     </div>
-                    <div class="dropdown">
-                        <button class="btn btn-sm btn-link text-muted p-0" data-bs-toggle="dropdown">⋮</button>
-                        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-                            <li><a class="dropdown-item" href="{% url 'frameworks:domain_edit' domain.id %}">Edit Domain</a></li>
-                            <li><a class="dropdown-item" href="{% url 'frameworks:why_create' domain.id %}">+ Add Why</a></li>
-                            <li><a class="dropdown-item" href="{% url 'frameworks:objective_create' framework.id %}?domain_id={{ domain.id }}">+ Add Objective</a></li>
-                            <li><a class="dropdown-item" href="{% url 'frameworks:goal_create' framework.id %}?domain_id={{ domain.id }}">+ Add Goal</a></li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item text-danger" href="{% url 'frameworks:domain_delete' domain.id %}">Delete Domain</a></li>
-                        </ul>
+                    <div class="d-flex align-items-center gap-1">
+                        <form method="post" action="{% url 'frameworks:domain_move' domain.id 'up' %}" class="d-inline">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-link text-muted p-0 text-decoration-none" title="Move Left / Earlier" style="font-size: 0.75rem;">◀</button>
+                        </form>
+                        <form method="post" action="{% url 'frameworks:domain_move' domain.id 'down' %}" class="d-inline">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-sm btn-link text-muted p-0 text-decoration-none" title="Move Right / Later" style="font-size: 0.75rem;">▶</button>
+                        </form>
+                        <div class="dropdown ms-1">
+                            <button class="btn btn-sm btn-link text-muted p-0" data-bs-toggle="dropdown">⋮</button>
+                            <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                <li><a class="dropdown-item" href="{% url 'frameworks:domain_edit' domain.id %}">Edit Domain</a></li>
+                                <li><a class="dropdown-item" href="{% url 'frameworks:why_create' domain.id %}">+ Add Why</a></li>
+                                <li><a class="dropdown-item" href="{% url 'frameworks:objective_create' framework.id %}?domain_id={{ domain.id }}">+ Add Objective</a></li>
+                                <li><a class="dropdown-item" href="{% url 'frameworks:goal_create' framework.id %}?domain_id={{ domain.id }}">+ Add Goal</a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item text-danger" href="{% url 'frameworks:domain_delete' domain.id %}">Delete Domain</a></li>
+                            </ul>
+                        </div>
                     </div>
                 </div>
 
@@ -91,12 +101,22 @@
                                             <span class="badge badge-non-negotiable ms-1">Non-Negotiable</span>
                                         {% endif %}
                                     </div>
-                                    <div class="dropdown ms-1">
-                                        <button class="btn btn-sm btn-link text-muted p-0" data-bs-toggle="dropdown">⋮</button>
-                                        <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-                                            <li><a class="dropdown-item small" href="{% url 'frameworks:why_edit' why.id %}">Edit</a></li>
-                                            <li><a class="dropdown-item small text-danger" href="{% url 'frameworks:why_delete' why.id %}">Delete</a></li>
-                                        </ul>
+                                    <div class="d-flex align-items-center gap-1">
+                                        <form method="post" action="{% url 'frameworks:why_move' why.id 'up' %}" class="d-inline">
+                                            {% csrf_token %}
+                                            <button type="submit" class="btn btn-sm btn-link text-muted p-0 text-decoration-none" title="Move Up" style="font-size: 0.7rem;">▲</button>
+                                        </form>
+                                        <form method="post" action="{% url 'frameworks:why_move' why.id 'down' %}" class="d-inline">
+                                            {% csrf_token %}
+                                            <button type="submit" class="btn btn-sm btn-link text-muted p-0 text-decoration-none" title="Move Down" style="font-size: 0.7rem;">▼</button>
+                                        </form>
+                                        <div class="dropdown ms-1">
+                                            <button class="btn btn-sm btn-link text-muted p-0" data-bs-toggle="dropdown">⋮</button>
+                                            <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                                <li><a class="dropdown-item small" href="{% url 'frameworks:why_edit' why.id %}">Edit</a></li>
+                                                <li><a class="dropdown-item small text-danger" href="{% url 'frameworks:why_delete' why.id %}">Delete</a></li>
+                                            </ul>
+                                        </div>
                                     </div>
                                 </div>
                                 {% if why.description %}
@@ -126,6 +146,12 @@
                                     <div class="dropdown ms-1">
                                         <button class="btn btn-sm btn-link text-muted p-0" data-bs-toggle="dropdown">⋮</button>
                                         <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                            <li><span class="dropdown-header small py-1">Set Status</span></li>
+                                            <li><form method="post" action="{% url 'frameworks:objective_status' obj.id %}">{% csrf_token %}<input type="hidden" name="status" value="ACTIVE"><button class="dropdown-item small {% if obj.status == 'ACTIVE' %}active{% endif %}">Active</button></form></li>
+                                            <li><form method="post" action="{% url 'frameworks:objective_status' obj.id %}">{% csrf_token %}<input type="hidden" name="status" value="PAUSED"><button class="dropdown-item small {% if obj.status == 'PAUSED' %}active{% endif %}">Paused</button></form></li>
+                                            <li><form method="post" action="{% url 'frameworks:objective_status' obj.id %}">{% csrf_token %}<input type="hidden" name="status" value="COMPLETED"><button class="dropdown-item small {% if obj.status == 'COMPLETED' %}active{% endif %}">Completed</button></form></li>
+                                            <li><form method="post" action="{% url 'frameworks:objective_status' obj.id %}">{% csrf_token %}<input type="hidden" name="status" value="ABANDONED"><button class="dropdown-item small {% if obj.status == 'ABANDONED' %}active{% endif %}">Abandoned</button></form></li>
+                                            <li><hr class="dropdown-divider"></li>
                                             <li><a class="dropdown-item small" href="{% url 'frameworks:objective_edit' obj.id %}">Edit</a></li>
                                             <li><a class="dropdown-item small text-danger" href="{% url 'frameworks:objective_delete' obj.id %}">Delete</a></li>
                                         </ul>
@@ -166,6 +192,12 @@
                                     <div class="dropdown ms-1">
                                         <button class="btn btn-sm btn-link text-muted p-0" data-bs-toggle="dropdown">⋮</button>
                                         <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                                            <li><span class="dropdown-header small py-1">Set Status</span></li>
+                                            <li><form method="post" action="{% url 'frameworks:goal_status' goal.id %}">{% csrf_token %}<input type="hidden" name="status" value="ACTIVE"><button class="dropdown-item small {% if goal.status == 'ACTIVE' %}active{% endif %}">Active</button></form></li>
+                                            <li><form method="post" action="{% url 'frameworks:goal_status' goal.id %}">{% csrf_token %}<input type="hidden" name="status" value="PAUSED"><button class="dropdown-item small {% if goal.status == 'PAUSED' %}active{% endif %}">Paused</button></form></li>
+                                            <li><form method="post" action="{% url 'frameworks:goal_status' goal.id %}">{% csrf_token %}<input type="hidden" name="status" value="COMPLETED"><button class="dropdown-item small {% if goal.status == 'COMPLETED' %}active{% endif %}">Completed</button></form></li>
+                                            <li><form method="post" action="{% url 'frameworks:goal_status' goal.id %}">{% csrf_token %}<input type="hidden" name="status" value="ABANDONED"><button class="dropdown-item small {% if goal.status == 'ABANDONED' %}active{% endif %}">Abandoned</button></form></li>
+                                            <li><hr class="dropdown-divider"></li>
                                             <li><a class="dropdown-item small" href="{% url 'frameworks:goal_edit' goal.id %}">Edit</a></li>
                                             <li><a class="dropdown-item small text-danger" href="{% url 'frameworks:goal_delete' goal.id %}">Delete</a></li>
                                         </ul>
