@@ -1,9 +1,12 @@
+import logging
 from django.shortcuts import render, redirect
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from accounts.forms import UserRegistrationForm, UserLLMConfigForm
 from accounts.models import UserLLMConfig
+
+logger = logging.getLogger(__name__)
 
 def register_view(request):
     if request.user.is_authenticated:
@@ -64,10 +67,11 @@ def test_llm_connection_view(request):
         provider = request.POST.get("provider", "none")
         model_name = request.POST.get("model_name", "").strip()
         api_base = request.POST.get("api_base", "").strip()
-        consent_given = request.POST.get("consent_given") in ("on", "true", "1", True)
-        raw_key = request.POST.get("raw_api_key", "").strip()
-        # Only reuse saved key if submitted provider matches the saved provider
-        api_key = raw_key or (config.api_key if (config and config.provider == provider) else "")
+        consent_given = str(request.POST.get("consent_given", "")).lower() in ("on", "true", "1") or request.POST.get("consent_given") is True
+        raw_key = (request.POST.get("raw_api_key") or request.POST.get("api_key") or "").strip()
+        # Only reuse saved key if both submitted provider and api_base match saved configuration
+        api_base_matches = (api_base == (config.api_base or "").strip()) if config else False
+        api_key = raw_key or (config.api_key if (config and config.provider == provider and api_base_matches) else "")
     else:
         if not config:
             messages.warning(request, "Please configure an active LLM provider before testing.")
@@ -98,5 +102,16 @@ def test_llm_connection_view(request):
     if success:
         messages.success(request, f"Connection verified successfully! ({provider}: {model_name})")
     else:
-        messages.error(request, f"Connection failed: {response_text}")
+        logger.warning(
+            "LLM test connection failure for user '%s' (%s/%s, base=%s): %s",
+            request.user.username, provider, model_name, api_base, response_text
+        )
+        # Preserve specific policy validation errors while sanitizing lower-level stack/connection traces
+        if response_text.startswith("Invalid API base URL:") or response_text.startswith("Outbound connection blocked:"):
+            display_err = response_text
+        elif "Consent" in response_text or "disabled" in response_text or "unconfigured" in response_text:
+            display_err = response_text
+        else:
+            display_err = "The LLM endpoint could not be reached or returned an authentication/connectivity error. Check settings and credentials."
+        messages.error(request, f"Connection failed: {display_err}")
     return redirect("accounts:settings")

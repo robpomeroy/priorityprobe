@@ -39,24 +39,20 @@ def chat_view(request, framework_id):
         else:
             selected_domain_ids = None
 
-        context_md = generate_framework_markdown(
-            framework,
-            include_instructions=True,
-            selected_domain_ids=selected_domain_ids
-        )
-
+        selected_decision_raw = request.POST.getlist("selected_decisions")
+        selected_decision_ids = None
         if selected_decision_raw:
             try:
                 selected_decision_ids = [int(x) for x in selected_decision_raw if str(x).isdigit()]
-                decs = DecisionRecord.objects.filter(id__in=selected_decision_ids, framework=framework).prefetch_related(
-                    "affected_domains", "relevant_whys", "supporting_objectives", "conflicting_objectives"
-                )
-                if decs.exists():
-                    context_md += "\n\n# Selected Decision Assessments Context:\n"
-                    for d in decs:
-                        context_md += f"\n{generate_decision_markdown(d, include_instructions=False)}\n"
             except (ValueError, TypeError):
-                pass
+                selected_decision_ids = []
+
+        context_md = generate_framework_markdown(
+            framework,
+            include_instructions=True,
+            selected_domain_ids=selected_domain_ids,
+            selected_decision_ids=selected_decision_ids,
+        )
 
         history = []
         if include_history:
@@ -108,6 +104,9 @@ def reflection_delete_view(request, reflection_id):
         return HttpResponseForbidden()
     ref = get_object_or_404(LLMReflectionLog, id=reflection_id, framework__owner=request.user)
     fw_id = ref.framework_id
+    dec_id = ref.decision_id
     ref.delete()
     messages.info(request, "Reflection entry deleted.")
+    if dec_id:
+        return redirect("decisions:decision_detail", decision_id=dec_id)
     return redirect("llm:chat", framework_id=fw_id)

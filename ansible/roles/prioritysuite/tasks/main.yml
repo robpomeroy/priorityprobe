@@ -1,4 +1,12 @@
 ---
+- name: Validate that deployment credentials and secrets are not default placeholders
+  ansible.builtin.assert:
+    that:
+      - django_secret_key != "generate-a-secure-random-50-character-secret-key-here"
+      - db_password != "change_this_to_a_secure_database_password"
+      - django_secret_key | length >= 32
+    fail_msg: "Production deployment rejected: django_secret_key and db_password must be changed from the example placeholder values."
+
 - name: Ensure application root directory exists with proper ownership
   ansible.builtin.file:
     path: "{{ app_root }}"

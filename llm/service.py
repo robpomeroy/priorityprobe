@@ -8,6 +8,20 @@ from typing import List, Dict, Optional, Tuple
 _dns_thread_local = threading.local()
 _original_getaddrinfo = socket.getaddrinfo
 
+def _coerce_port(port, default_port=0):
+    if port is None or port == 0:
+        return default_port
+    if isinstance(port, int):
+        return port
+    if isinstance(port, str):
+        if port.isdigit():
+            return int(port)
+        try:
+            return socket.getservbyname(port)
+        except (OSError, socket.error):
+            return default_port
+    return default_port
+
 def _thread_scoped_getaddrinfo(host, port, *args, **kwargs):
     pinned = getattr(_dns_thread_local, "pinned_dns", None)
     if pinned and host:
@@ -16,7 +30,7 @@ def _thread_scoped_getaddrinfo(host, port, *args, **kwargs):
             safe_ip, target_port = pinned[host_key]
             is_v6 = ":" in safe_ip
             family = socket.AF_INET6 if is_v6 else socket.AF_INET
-            resolved_port = port if port is not None else target_port
+            resolved_port = _coerce_port(port, target_port)
             sockaddr = (safe_ip, resolved_port, 0, 0) if is_v6 else (safe_ip, resolved_port)
             return [(family, socket.SOCK_STREAM, 6, "", sockaddr)]
     return _original_getaddrinfo(host, port, *args, **kwargs)
@@ -98,6 +112,7 @@ def generate_reflection(
     api_key: Optional[str] = None,
     api_base: Optional[str] = None,
     history: Optional[List[Dict[str, str]]] = None,
+    timeout: int = 60,
 ) -> Tuple[bool, str]:
     """
     Vendor-neutral completion wrapper using LiteLLM.
@@ -149,7 +164,8 @@ def generate_reflection(
                 return False, f"Could not resolve destination host '{host_str}'."
 
             allowlist = getattr(settings, "OLLAMA_ALLOWED_HOSTS", None) or []
-            host_explicitly_allowlisted = (host_str in allowlist)
+            normalized_allowlist = {h.strip().lower() for h in allowlist if h.strip()}
+            host_explicitly_allowlisted = (host_str.lower() in normalized_allowlist)
 
             resolved_ips = []
             for family, socktype, proto, canonname, sockaddr in addr_infos:
@@ -193,6 +209,7 @@ def generate_reflection(
         "model": normalized_model,
         "messages": messages,
         "temperature": 0.4,
+        "timeout": timeout,
     }
 
     if api_key:

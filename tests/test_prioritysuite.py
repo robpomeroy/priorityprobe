@@ -846,7 +846,7 @@ def test_priority_comparison_view(client, user, framework, domain, objective, go
             "type": "objectives",
             "selected": [str(objective.id), str(obj2.id)],
             "prompt": "Evaluate trade-offs between craft and rest.",
-        })
+        }, follow=True)
         assert resp_reflect.status_code == 200
         assert resp_reflect.context["comparison_reflection"] == "Comparison reflection from AI"
         assert LLMReflectionLog.objects.filter(framework=framework, llm_response="Comparison reflection from AI").exists()
@@ -1149,6 +1149,11 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
     assert is_safe_ollama_endpoint("10.0.0.1") is False
     assert is_safe_ollama_endpoint("192.168.1.1") is False
     assert is_safe_ollama_endpoint("169.254.1.1") is False
+    assert is_safe_ollama_endpoint("100.64.0.1") is False
+    assert is_safe_ollama_endpoint("100.127.255.254") is False
+    assert is_safe_ollama_endpoint("0.0.0.0") is False
+    assert is_safe_ollama_endpoint("::ffff:127.0.0.1") is False
+    assert is_safe_ollama_endpoint("::ffff:10.0.0.1") is False
     assert is_safe_ollama_endpoint("invalid.host.that.does.not.exist") is False
 
     import socket
@@ -1232,10 +1237,18 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
     assert dec_admin.has_delete_permission(req, dec) is True
 
     req.user.is_superuser = False
-    dec_admin.formfield_for_foreignkey(DecisionRecord._meta.get_field("framework"), req)
-    dec_admin.formfield_for_manytomany(DecisionRecord._meta.get_field("affected_domains"), req)
-    dec_admin.formfield_for_manytomany(DecisionRecord._meta.get_field("relevant_whys"), req)
-    dec_admin.formfield_for_manytomany(DecisionRecord._meta.get_field("supporting_objectives"), req)
+    fw_field = dec_admin.formfield_for_foreignkey(DecisionRecord._meta.get_field("framework"), req)
+    assert fw_field.queryset.filter(owner=other_user).count() == 0
+    assert fw_field.queryset.filter(owner=user).count() >= 1
+
+    dom_field = dec_admin.formfield_for_manytomany(DecisionRecord._meta.get_field("affected_domains"), req)
+    assert dom_field.queryset.filter(framework__owner=other_user).count() == 0
+
+    why_field = dec_admin.formfield_for_manytomany(DecisionRecord._meta.get_field("relevant_whys"), req)
+    assert why_field.queryset.filter(domain__framework__owner=other_user).count() == 0
+
+    obj_field = dec_admin.formfield_for_manytomany(DecisionRecord._meta.get_field("supporting_objectives"), req)
+    assert obj_field.queryset.filter(primary_domain__framework__owner=other_user).count() == 0
 
     ref_admin = LLMReflectionLogAdmin(LLMReflectionLog, site)
     ref_qs = ref_admin.get_queryset(req)
@@ -1250,8 +1263,12 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
     assert ref_admin.has_delete_permission(req, ref) is True
 
     req.user.is_superuser = False
-    ref_admin.formfield_for_foreignkey(LLMReflectionLog._meta.get_field("framework"), req)
-    ref_admin.formfield_for_foreignkey(LLMReflectionLog._meta.get_field("decision"), req)
+    ref_fw_field = ref_admin.formfield_for_foreignkey(LLMReflectionLog._meta.get_field("framework"), req)
+    assert ref_fw_field.queryset.filter(owner=other_user).count() == 0
+    assert ref_fw_field.queryset.filter(owner=user).count() >= 1
+
+    ref_dec_field = ref_admin.formfield_for_foreignkey(LLMReflectionLog._meta.get_field("decision"), req)
+    assert ref_dec_field.queryset.filter(framework__owner=other_user).count() == 0
 
     # 5. Thread-scoped DNS pinning test
     from llm.service import _pinned_dns
@@ -1260,9 +1277,159 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
         res = socket.getaddrinfo("test.isolated.local", 443)
         assert res[0][4][0] == "127.0.0.1"
 
-    # 6. Settings cookie parsing with "yes"
+    # 6. Settings cookie parsing and types
     from django.conf import settings
-    assert os.environ.get("SESSION_COOKIE_SECURE", str(not settings.DEBUG)).lower() in ("true", "1", "yes")
+    assert isinstance(settings.SESSION_COOKIE_SECURE, bool)
+    assert isinstance(settings.CSRF_COOKIE_SECURE, bool)
+
+
+def test_compare_view_security_and_edge_cases(client, user, other_user, framework, objective, goal):
+    from frameworks.models import Framework, Domain, Objective
+    client.force_login(user)
+
+    # 1. Cross-user isolation: accessing another user's framework returns 404
+    other_fw = Framework.objects.create(owner=other_user, name="Other Framework")
+    resp_other = client.get(f"/decisions/compare/{other_fw.id}/")
+    assert resp_other.status_code == 404
+
+    # 2. Foreign selected IDs: foreign objective ID in selected is excluded from items
+    other_dom = Domain.objects.create(framework=other_fw, name="Other Domain")
+    other_obj = Objective.objects.create(primary_domain=other_dom, title="Foreign Obj")
+    resp_foreign = client.get(f"/decisions/compare/{framework.id}/?type=objectives&selected={objective.id}&selected={other_obj.id}")
+    assert resp_foreign.status_code == 200
+    assert objective in resp_foreign.context["items"]
+    assert other_obj not in resp_foreign.context["items"]
+
+    # 3. Invalid compare_type falls back to "objectives"
+    resp_invalid_type = client.get(f"/decisions/compare/{framework.id}/?type=malicious_type&selected={objective.id}")
+    assert resp_invalid_type.status_code == 200
+    assert resp_invalid_type.context["compare_type"] == "objectives"
+
+    # 4. POST vs GET selected precedence: POST body overrides query string
+    resp_precedence = client.post(f"/decisions/compare/{framework.id}/?selected={objective.id}", {
+        "action": "convert_to_decision",
+        "type": "objectives",
+        "selected": [str(objective.id)],
+    })
+    assert resp_precedence.status_code == 302
+
+    # 5. Empty selection handling: POST with empty selected shows warning and does not create DecisionRecord
+    initial_count = DecisionRecord.objects.filter(framework=framework).count()
+    resp_empty = client.post(f"/decisions/compare/{framework.id}/", {
+        "action": "convert_to_decision",
+        "type": "objectives",
+        "selected": [],
+    }, follow=True)
+    assert resp_empty.status_code == 200
+    assert DecisionRecord.objects.filter(framework=framework).count() == initial_count
+    messages = list(resp_empty.context["messages"])
+    assert any("select at least one" in m.message.lower() for m in messages)
+
+    # 6. Empty selection on reflection does not call LLM
+    with patch("decisions.views.generate_reflection") as mock_gen:
+        resp_empty_reflect = client.post(f"/decisions/compare/{framework.id}/", {
+            "action": "reflect",
+            "type": "objectives",
+            "selected": [],
+        }, follow=True)
+        assert resp_empty_reflect.status_code == 200
+        assert not mock_gen.called
+
+
+def test_mark_all_reviewed_and_move_methods(client, user, other_user, framework, domain, why):
+    client.force_login(user)
+
+    # 1. mark_all_reviewed_view requires POST (GET returns 403)
+    resp_get = client.get(f"/frameworks/review/{framework.id}/mark-all/")
+    assert resp_get.status_code == 403
+
+    # 2. Cross-user isolation on mark_all_reviewed_view
+    client.force_login(other_user)
+    resp_cross = client.post(f"/frameworks/review/{framework.id}/mark-all/")
+    assert resp_cross.status_code == 404
+
+    # 3. domain_move_view requires POST (GET returns 403)
+    client.force_login(user)
+    assert client.get(f"/frameworks/domain/{domain.id}/move/up/").status_code == 403
+
+    # 4. why_move_view requires POST (GET returns 403)
+    assert client.get(f"/frameworks/why/{why.id}/move/up/").status_code == 403
+
+    # 5. Invalid direction on move leaves items unchanged
+    initial_order = domain.display_order
+    resp_invalid_dir = client.post(f"/frameworks/domain/{domain.id}/move/sideways/")
+    assert resp_invalid_dir.status_code == 302
+    domain.refresh_from_db()
+    assert domain.display_order == initial_order
+
+
+def test_chat_view_selected_decisions_filtering(client, user, framework):
+    client.force_login(user)
+    cfg, _ = UserLLMConfig.objects.get_or_create(user=user)
+    cfg.consent_given = True
+    cfg.provider = "ollama"
+    cfg.model_name = "llama3.1"
+    cfg.save()
+
+    dec1 = DecisionRecord.objects.create(framework=framework, title="Decision Alpha", proposal_description="Alpha desc")
+    dec2 = DecisionRecord.objects.create(framework=framework, title="Decision Beta", proposal_description="Beta desc")
+
+    with patch("llm.views.generate_reflection", return_value=(True, "Chat response")) as mock_gen:
+        resp = client.post(f"/llm/framework/{framework.id}/chat/", {
+            "prompt": "How does Alpha fit?",
+            "selected_decisions": [str(dec1.id)],
+        })
+        assert resp.status_code == 302
+        assert mock_gen.called
+        ctx = mock_gen.call_args[1]["user_context_markdown"]
+        assert "Decision Assessment: Decision Alpha" in ctx
+        assert "Decision Assessment: Decision Beta" not in ctx
+
+
+def test_test_llm_connection_key_isolation_on_api_base_change(client, user):
+    client.force_login(user)
+    cfg, _ = UserLLMConfig.objects.get_or_create(user=user)
+    cfg.consent_given = True
+    cfg.provider = "custom"
+    cfg.model_name = "custom-model"
+    cfg.api_base = "https://legit-server.internal/v1"
+    cfg.api_key = "super-secret-key-12345"
+    cfg.save()
+
+    # Changing api_base without supplying api_key in POST does NOT reuse stored key (prevents exfiltration)
+    with patch("llm.service.generate_reflection") as mock_gen:
+        mock_gen.return_value = (True, "Connection OK")
+        with patch("accounts.forms.validate_llm_api_base", return_value="https://attacker-server.com/v1"):
+            resp = client.post("/accounts/settings/test-llm/", {
+                "provider": "custom",
+                "model_name": "custom-model",
+                "api_base": "https://attacker-server.com/v1",
+                "api_key": "",
+                "consent_given": True,
+            })
+            assert resp.status_code == 302
+            assert mock_gen.called
+            # The key sent to generate_reflection must be None or empty, NOT super-secret-key-12345!
+            assert mock_gen.call_args[1]["api_key"] in (None, "")
+
+
+def test_reflection_delete_redirects_to_decision_detail_when_set(client, user, framework):
+    client.force_login(user)
+    dec = DecisionRecord.objects.create(framework=framework, title="Delete Ref Test", proposal_description="Desc")
+    ref = LLMReflectionLog.objects.create(
+        framework=framework,
+        decision=dec,
+        user_prompt="Prompt",
+        context_snapshot="Ctx",
+        llm_response="Resp",
+        provider_used="ollama",
+    )
+    # Deleting decision reflection redirects to decision detail
+    resp = client.post(f"/llm/reflection/{ref.id}/delete/")
+    assert resp.status_code == 302
+    assert resp.url == f"/decisions/{dec.id}/"
+    assert not LLMReflectionLog.objects.filter(id=ref.id).exists()
+
 
 
 

@@ -10,6 +10,17 @@ from accounts.models import UserLLMConfig
 
 ALLOWED_PROVIDERS = {"ollama", "openrouter", "openai", "anthropic", "gemini", "custom", "none"}
 
+def _is_ip_address_safe(ip: ipaddress._BaseAddress) -> bool:
+    if hasattr(ip, "ipv4_mapped") and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    if ip.is_unspecified:
+        return False
+    if ip.is_loopback:
+        return bool(getattr(settings, "DEBUG", False))
+    if not ip.is_global or ip.is_private or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+        return False
+    return True
+
 def is_safe_ollama_endpoint(hostname: str) -> bool:
     """
     Checks if an Ollama hostname/IP is permitted.
@@ -17,37 +28,33 @@ def is_safe_ollama_endpoint(hostname: str) -> bool:
     In hosted production deployments, loopback/private destinations are blocked unless
     specifically configured in settings.OLLAMA_ALLOWED_HOSTS.
     """
+    target_host = hostname.strip().lower()
     allowlist = getattr(settings, "OLLAMA_ALLOWED_HOSTS", None)
     if allowlist is not None:
-        if hostname in allowlist:
+        normalized_allowlist = {h.strip().lower() for h in allowlist if h.strip()}
+        if target_host in normalized_allowlist:
             return True
-        if "localhost" in allowlist and hostname in ("127.0.0.1", "::1", "0:0:0:0:0:0:0:1"):
+        if "localhost" in normalized_allowlist and target_host in ("127.0.0.1", "::1", "0:0:0:0:0:0:0:1"):
             return True
 
-    # In local development (DEBUG=True), allow localhost and 127.0.0.1 by default
+    # In local development (DEBUG=True), allow localhost and loopbacks by default
     if getattr(settings, "DEBUG", False):
-        if hostname in ("localhost", "127.0.0.1", "::1"):
+        if target_host in ("localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1"):
             return True
 
     try:
-        ip = ipaddress.ip_address(hostname)
-        if ip.is_loopback:
-            return bool(getattr(settings, "DEBUG", False))
-        if ip.is_private or ip.is_link_local or ip.is_reserved or ip.is_multicast:
-            return False
+        ip = ipaddress.ip_address(target_host)
+        return _is_ip_address_safe(ip)
     except ValueError:
         # Resolve hostname to check destination IPs across both IPv4 and IPv6
         try:
-            addr_infos = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC)
+            addr_infos = socket.getaddrinfo(target_host, None, socket.AF_UNSPEC)
             if not addr_infos:
                 return False
             for family, socktype, proto, canonname, sockaddr in addr_infos:
                 addr_str = sockaddr[0]
                 resolved_ip = ipaddress.ip_address(addr_str)
-                if resolved_ip.is_loopback:
-                    if not getattr(settings, "DEBUG", False):
-                        return False
-                elif resolved_ip.is_private or resolved_ip.is_link_local or resolved_ip.is_reserved or resolved_ip.is_multicast:
+                if not _is_ip_address_safe(resolved_ip):
                     return False
         except Exception:
             return False

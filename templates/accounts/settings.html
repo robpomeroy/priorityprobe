@@ -63,9 +63,7 @@
                     <div class="mt-4 d-flex justify-content-between align-items-center">
                         <div class="d-flex gap-2">
                             <button type="submit" class="btn btn-primary bg-terracotta">Save Settings</button>
-                            {% if config.provider != 'none' %}
-                                <button type="submit" formaction="{% url 'accounts:test_llm' %}" class="btn btn-outline-sage">Test Connection</button>
-                            {% endif %}
+                            <button type="submit" formaction="{% url 'accounts:test_llm' %}" class="btn btn-outline-sage">Test Connection</button>
                         </div>
                         <a href="{% url 'accounts:delete_account' %}" class="btn btn-outline-danger btn-sm">Delete Account & Data</a>
                     </div>

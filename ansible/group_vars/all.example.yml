@@ -21,6 +21,8 @@ ssl_key_path: "/etc/pki/tls/private/prioritysuite.key"
 # Gunicorn
 gunicorn_bind: "127.0.0.1:8000"
 gunicorn_workers: 3
+gunicorn_timeout: 90
+proxy_timeout: 90
 
 # Database (MariaDB)
 db_name: prioritysuite
@@ -34,5 +36,5 @@ django_secret_key: "generate-a-secure-random-50-character-secret-key-here"
 encryption_key: ""  # Optional 32-byte Fernet key; if blank, derived from secret key
 allowed_hosts: "{{ server_domain }},127.0.0.1,localhost"
 
-# Optional Ollama internal destination allowlist in production
-ollama_allowed_hosts: "localhost,127.0.0.1"
+# Optional Ollama internal destination allowlist in production (empty by default to prevent loopback SSRF)
+ollama_allowed_hosts: ""

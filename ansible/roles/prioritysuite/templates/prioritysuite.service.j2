@@ -9,6 +9,7 @@ WorkingDirectory={{ app_root }}
 EnvironmentFile={{ app_root }}/.env
 ExecStart={{ app_root }}/.venv/bin/gunicorn \
           --workers {{ gunicorn_workers }} \
+          --timeout {{ gunicorn_timeout | default(90) }} \
           --bind {{ gunicorn_bind }} \
           --access-logfile - \
           --error-logfile - \

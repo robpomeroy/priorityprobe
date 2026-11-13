@@ -1,3 +1,4 @@
+from datetime import timedelta
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
@@ -215,7 +216,35 @@ def goal_delete_view(request, goal_id):
         return redirect("frameworks:workspace_detail", framework_id=fw_id)
     return render(request, "frameworks/confirm_delete.html", {"item_type": "Goal", "item_name": goal.title})
 
-from datetime import timedelta
+def _reorder_sibling_items(items, target_item, direction):
+    idx = items.index(target_item)
+    target_idx = None
+    if direction == "up" and idx > 0:
+        target_idx = idx - 1
+    elif direction == "down" and idx < len(items) - 1:
+        target_idx = idx + 1
+
+    if target_idx is not None:
+        items[idx], items[target_idx] = items[target_idx], items[idx]
+        for new_order, item in enumerate(items, start=1):
+            if item.display_order != new_order:
+                item.display_order = new_order
+                item.save(update_fields=["display_order"])
+
+def _handle_status_update(request, item, label):
+    new_status = request.POST.get("status")
+    if new_status in StatusChoices.values:
+        item.status = new_status
+        item.save()
+        messages.success(request, f"{label} status changed to {item.get_status_display()}.")
+    next_url = request.POST.get("next") or request.META.get("HTTP_REFERER")
+    if next_url and url_has_allowed_host_and_scheme(
+        next_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return redirect(next_url)
+    return redirect("frameworks:workspace_detail", framework_id=item.primary_domain.framework_id)
 
 @login_required
 def domain_move_view(request, domain_id, direction):
@@ -225,20 +254,7 @@ def domain_move_view(request, domain_id, direction):
         domain = get_object_or_404(Domain, id=domain_id, framework__owner=request.user)
         fw = Framework.objects.select_for_update().get(id=domain.framework_id)
         all_domains = list(fw.domains.order_by("display_order", "id"))
-        idx = all_domains.index(domain)
-
-        target_idx = None
-        if direction == "up" and idx > 0:
-            target_idx = idx - 1
-        elif direction == "down" and idx < len(all_domains) - 1:
-            target_idx = idx + 1
-
-        if target_idx is not None:
-            all_domains[idx], all_domains[target_idx] = all_domains[target_idx], all_domains[idx]
-            for new_order, d in enumerate(all_domains, start=1):
-                if d.display_order != new_order:
-                    d.display_order = new_order
-                    d.save(update_fields=["display_order"])
+        _reorder_sibling_items(all_domains, domain, direction)
 
     return redirect("frameworks:workspace_detail", framework_id=domain.framework_id)
 
@@ -250,20 +266,7 @@ def why_move_view(request, why_id, direction):
         why = get_object_or_404(Why, id=why_id, domain__framework__owner=request.user)
         dom = Domain.objects.select_for_update().get(id=why.domain_id)
         all_whys = list(dom.whys.order_by("display_order", "id"))
-        idx = all_whys.index(why)
-
-        target_idx = None
-        if direction == "up" and idx > 0:
-            target_idx = idx - 1
-        elif direction == "down" and idx < len(all_whys) - 1:
-            target_idx = idx + 1
-
-        if target_idx is not None:
-            all_whys[idx], all_whys[target_idx] = all_whys[target_idx], all_whys[idx]
-            for new_order, w in enumerate(all_whys, start=1):
-                if w.display_order != new_order:
-                    w.display_order = new_order
-                    w.save(update_fields=["display_order"])
+        _reorder_sibling_items(all_whys, why, direction)
 
     return redirect("frameworks:workspace_detail", framework_id=why.domain.framework_id)
 
@@ -272,30 +275,14 @@ def objective_status_view(request, objective_id):
     if request.method != "POST":
         return HttpResponseForbidden()
     obj = get_object_or_404(Objective, id=objective_id, primary_domain__framework__owner=request.user)
-    new_status = request.POST.get("status")
-    if new_status in StatusChoices.values:
-        obj.status = new_status
-        obj.save()
-        messages.success(request, f"Objective status changed to {obj.get_status_display()}.")
-    next_url = request.POST.get("next") or request.META.get("HTTP_REFERER")
-    if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
-        return redirect(next_url)
-    return redirect("frameworks:workspace_detail", framework_id=obj.primary_domain.framework_id)
+    return _handle_status_update(request, obj, "Objective")
 
 @login_required
 def goal_status_view(request, goal_id):
     if request.method != "POST":
         return HttpResponseForbidden()
     goal = get_object_or_404(Goal, id=goal_id, primary_domain__framework__owner=request.user)
-    new_status = request.POST.get("status")
-    if new_status in StatusChoices.values:
-        goal.status = new_status
-        goal.save()
-        messages.success(request, f"Goal status changed to {goal.get_status_display()}.")
-    next_url = request.POST.get("next") or request.META.get("HTTP_REFERER")
-    if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
-        return redirect(next_url)
-    return redirect("frameworks:workspace_detail", framework_id=goal.primary_domain.framework_id)
+    return _handle_status_update(request, goal, "Goal")
 
 @login_required
 def review_view(request, framework_id=None):
@@ -339,9 +326,10 @@ def mark_all_reviewed_view(request, framework_id):
         return HttpResponseForbidden()
     framework = get_object_or_404(Framework, id=framework_id, owner=request.user)
     today = timezone.now().date()
-    Why.objects.filter(domain__framework=framework).update(last_reviewed_at=today)
-    Objective.objects.filter(primary_domain__framework=framework).update(last_reviewed_at=today)
-    Goal.objects.filter(primary_domain__framework=framework).update(last_reviewed_at=today)
+    with transaction.atomic():
+        Why.objects.filter(domain__framework=framework).update(last_reviewed_at=today)
+        Objective.objects.filter(primary_domain__framework=framework).update(last_reviewed_at=today)
+        Goal.objects.filter(primary_domain__framework=framework).update(last_reviewed_at=today)
     messages.success(request, f"Marked all framework items as reviewed on {today}.")
     return redirect("frameworks:review_detail", framework_id=framework.id)
 

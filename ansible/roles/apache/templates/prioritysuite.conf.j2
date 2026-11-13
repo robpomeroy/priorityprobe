@@ -37,6 +37,7 @@
 
     # Proxy to PrioritySuite Gunicorn application server
     ProxyPreserveHost On
+    ProxyTimeout {{ proxy_timeout | default(90) }}
     ProxyPass /static/ !
     ProxyPass / http://{{ gunicorn_bind }}/
     ProxyPassReverse / http://{{ gunicorn_bind }}/
@@ -64,6 +65,7 @@
     </Directory>
 
     ProxyPreserveHost On
+    ProxyTimeout {{ proxy_timeout | default(90) }}
     ProxyPass /static/ !
     ProxyPass / http://{{ gunicorn_bind }}/
     ProxyPassReverse / http://{{ gunicorn_bind }}/

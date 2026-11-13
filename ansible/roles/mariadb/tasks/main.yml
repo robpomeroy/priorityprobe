@@ -6,11 +6,37 @@
       - python3-PyMySQL
     state: present
 
+- name: Configure MariaDB loopback binding
+  ansible.builtin.copy:
+    dest: /etc/my.cnf.d/prioritysuite.cnf
+    content: |
+      [mariadb]
+      bind-address = 127.0.0.1
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart MariaDB
+
 - name: Enable and start MariaDB service
   ansible.builtin.systemd:
     name: mariadb
     state: started
     enabled: true
+
+- name: Remove MariaDB anonymous users
+  community.mysql.mysql_user:
+    name: ""
+    host_all: true
+    state: absent
+    login_user: root
+    login_unix_socket: /var/lib/mysql/mysql.sock
+
+- name: Remove MariaDB test database
+  community.mysql.mysql_db:
+    name: test
+    state: absent
+    login_user: root
+    login_unix_socket: /var/lib/mysql/mysql.sock
 
 - name: Create PrioritySuite application database
   community.mysql.mysql_db:

@@ -131,26 +131,36 @@ def decision_compare_view(request, framework_id=None):
     all_objectives = Objective.objects.filter(primary_domain__framework=framework).select_related("primary_domain").prefetch_related("whys", "related_domains")
     all_goals = Goal.objects.filter(primary_domain__framework=framework).select_related("primary_domain").prefetch_related("objectives__whys", "related_domains")
 
-    compare_type = request.POST.get("type") or request.GET.get("type", "objectives")
-    selected_raw = request.GET.getlist("selected") or request.POST.getlist("selected")
+    raw_type = request.POST.get("type") if request.method == "POST" else request.GET.get("type")
+    compare_type = raw_type if raw_type in ("objectives", "goals") else "objectives"
+
+    if request.method == "POST":
+        selected_raw = request.POST.getlist("selected") or request.GET.getlist("selected")
+    else:
+        selected_raw = request.GET.getlist("selected")
+
     try:
         selected_ids = [int(x) for x in selected_raw if str(x).isdigit()]
     except (ValueError, TypeError):
         selected_ids = []
 
     if compare_type == "goals":
-        if not selected_ids and all_goals.exists():
+        if not selected_ids and all_goals.exists() and request.method != "POST":
             selected_ids = list(all_goals.values_list("id", flat=True)[:2])
         items = all_goals.filter(id__in=selected_ids)
     else:
-        if not selected_ids and all_objectives.exists():
+        if not selected_ids and all_objectives.exists() and request.method != "POST":
             selected_ids = list(all_objectives.values_list("id", flat=True)[:2])
         items = all_objectives.filter(id__in=selected_ids)
 
-    comparison_reflection = None
+    comparison_reflection = request.session.pop("comparison_reflection", None)
 
     if request.method == "POST":
         action = request.POST.get("action")
+        if action in ("convert_to_decision", "reflect") and not items.exists():
+            messages.warning(request, "Please select at least one valid priority item from your framework to compare.")
+            return redirect(f"{request.path}?type={compare_type}")
+
         if action == "convert_to_decision":
             title = f"Priority Comparison: {' vs '.join([item.title for item in items][:2])}"
             proposal = f"Evaluating trade-offs and competing demands between: {', '.join([item.title for item in items])}."
@@ -206,7 +216,8 @@ def decision_compare_view(request, framework_id=None):
                 summary_lines.append("")
 
             comp_md = "\n".join(summary_lines)
-            user_prompt = request.POST.get("prompt", "Analyze qualitative tensions and trade-offs between these competing priorities across domains, especially regarding limited time and energy. Note any non-negotiable Whys.")
+            default_prompt = "Analyze qualitative tensions and trade-offs between these competing priorities across domains, especially regarding limited time and energy. Note any non-negotiable Whys."
+            user_prompt = request.POST.get("prompt", "").strip() or default_prompt
             success, response_text = generate_reflection(
                 user_context_markdown=comp_md,
                 user_prompt=user_prompt,
@@ -223,8 +234,10 @@ def decision_compare_view(request, framework_id=None):
                     llm_response=response_text,
                     provider_used=f"{llm_config.provider} ({llm_config.model_name})",
                 )
-                comparison_reflection = response_text
+                request.session["comparison_reflection"] = response_text
                 messages.success(request, "Thinking partner reflection generated.")
+                query_parts = [f"type={compare_type}"] + [f"selected={x}" for x in selected_ids]
+                return redirect(f"{request.path}?{'&'.join(query_parts)}")
             else:
                 messages.error(request, response_text)
 

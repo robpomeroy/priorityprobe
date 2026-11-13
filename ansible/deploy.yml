@@ -44,6 +44,11 @@
       environment:
         DJANGO_SETTINGS_MODULE: "config.settings"
 
+    - name: Restore SELinux file contexts on staticfiles directory
+      ansible.builtin.command:
+        cmd: "restorecon -R {{ app_root }}/staticfiles"
+      changed_when: false
+
     - name: Restart PrioritySuite Gunicorn service
       ansible.builtin.systemd:
         name: "{{ app_name }}"
@@ -52,7 +57,7 @@
 
     - name: Verify application service health and readiness before proceeding
       ansible.builtin.uri:
-        url: "http://{{ gunicorn_bind | default('127.0.0.1:8000') }}/accounts/login/"
+        url: "http://{{ '127.0.0.1:8000' if (gunicorn_bind | default('127.0.0.1:8000')).startswith('0.0.0.0') else (gunicorn_bind | default('127.0.0.1:8000')) }}/accounts/login/"
         status_code: 200
         timeout: 10
       register: health_check
