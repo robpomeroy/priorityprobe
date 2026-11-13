@@ -62,11 +62,7 @@ def chat_view(request, framework_id):
         if include_history:
             recent_refs = list(reflections[:2])
             for r in reversed(recent_refs):
-                if r.context_snapshot:
-                    user_content = f"Here is my current Priorities Framework context:\n\n{r.context_snapshot}\n\nUser Question/Scenario:\n{r.user_prompt}"
-                else:
-                    user_content = r.user_prompt
-                history.append({"role": "user", "content": user_content})
+                history.append({"role": "user", "content": r.user_prompt})
                 history.append({"role": "assistant", "content": r.llm_response})
 
         success, response_text = generate_reflection(

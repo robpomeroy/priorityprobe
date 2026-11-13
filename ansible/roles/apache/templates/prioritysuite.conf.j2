@@ -46,15 +46,20 @@
     CustomLog /var/log/httpd/{{ app_name }}_access.log combined
 </VirtualHost>
 {% else %}
-<VirtualHost *:80>
+{# HTTP-only mode is restricted to local loopback clients for development #}
+<VirtualHost 127.0.0.1:80 [::1]:80>
     ServerName {{ server_domain }}
     ServerAdmin {{ server_admin_email }}
+
+    <Location />
+        Require local
+    </Location>
 
     RequestHeader set X-Forwarded-Proto "http"
 
     Alias /static/ {{ app_root }}/staticfiles/
     <Directory {{ app_root }}/staticfiles>
-        Require all granted
+        Require local
         Options -Indexes
     </Directory>
 

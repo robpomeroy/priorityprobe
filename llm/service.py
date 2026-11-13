@@ -1,26 +1,42 @@
 import contextlib
 import socket
+import threading
 import litellm
 from django.conf import settings
 from typing import List, Dict, Optional, Tuple
 
-@contextlib.contextmanager
-def _pinned_dns(target_host: str, target_port: int, safe_ip: str):
-    orig_getaddrinfo = socket.getaddrinfo
-    def custom_getaddrinfo(host, port, *args, **kwargs):
-        if host and host.lower() == target_host.lower():
+_dns_thread_local = threading.local()
+_original_getaddrinfo = socket.getaddrinfo
+
+def _thread_scoped_getaddrinfo(host, port, *args, **kwargs):
+    pinned = getattr(_dns_thread_local, "pinned_dns", None)
+    if pinned and host:
+        host_key = host.lower()
+        if host_key in pinned:
+            safe_ip, target_port = pinned[host_key]
             is_v6 = ":" in safe_ip
             family = socket.AF_INET6 if is_v6 else socket.AF_INET
             resolved_port = port if port is not None else target_port
             sockaddr = (safe_ip, resolved_port, 0, 0) if is_v6 else (safe_ip, resolved_port)
             return [(family, socket.SOCK_STREAM, 6, "", sockaddr)]
-        return orig_getaddrinfo(host, port, *args, **kwargs)
+    return _original_getaddrinfo(host, port, *args, **kwargs)
 
-    socket.getaddrinfo = custom_getaddrinfo
+socket.getaddrinfo = _thread_scoped_getaddrinfo
+
+@contextlib.contextmanager
+def _pinned_dns(target_host: str, target_port: int, safe_ip: str):
+    if not hasattr(_dns_thread_local, "pinned_dns") or _dns_thread_local.pinned_dns is None:
+        _dns_thread_local.pinned_dns = {}
+    host_key = target_host.lower()
+    previous = _dns_thread_local.pinned_dns.get(host_key)
+    _dns_thread_local.pinned_dns[host_key] = (safe_ip, target_port)
     try:
         yield
     finally:
-        socket.getaddrinfo = orig_getaddrinfo
+        if previous is None:
+            _dns_thread_local.pinned_dns.pop(host_key, None)
+        else:
+            _dns_thread_local.pinned_dns[host_key] = previous
 
 SYSTEM_FACILITATOR_PROMPT = """You are a facilitator, sounding board, and analytical assistant for PrioritySuite, a personal priorities and decision-making framework suite.
 

@@ -1026,6 +1026,10 @@ def test_llm_chat_context_and_history(client, user, framework, domain, objective
         })
         assert resp.status_code == 302
         assert mock_gen.called
+        history_passed = mock_gen.call_args[1]["history"]
+        assert len(history_passed) == 2
+        assert history_passed[0]["content"] == "Prior message"
+        assert "Prior context" not in history_passed[0]["content"]
 
         # Reflection log was created
         assert LLMReflectionLog.objects.filter(framework=framework, llm_response="Guided advice on tradeoffs").exists()
@@ -1248,6 +1252,17 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
     req.user.is_superuser = False
     ref_admin.formfield_for_foreignkey(LLMReflectionLog._meta.get_field("framework"), req)
     ref_admin.formfield_for_foreignkey(LLMReflectionLog._meta.get_field("decision"), req)
+
+    # 5. Thread-scoped DNS pinning test
+    from llm.service import _pinned_dns
+    import socket
+    with _pinned_dns("test.isolated.local", 443, "127.0.0.1"):
+        res = socket.getaddrinfo("test.isolated.local", 443)
+        assert res[0][4][0] == "127.0.0.1"
+
+    # 6. Settings cookie parsing with "yes"
+    from django.conf import settings
+    assert os.environ.get("SESSION_COOKIE_SECURE", str(not settings.DEBUG)).lower() in ("true", "1", "yes")
 
 
 
