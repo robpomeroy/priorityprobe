@@ -14,13 +14,18 @@
         force: true
       become_user: "{{ app_user }}"
 
-    - name: Install and update Python virtualenv dependencies
+    - name: Install and update Python virtualenv requirements
       ansible.builtin.pip:
         requirements: "{{ app_root }}/requirements.txt"
+        virtualenv: "{{ app_root }}/.venv"
+        virtualenv_command: "{{ python_executable | default('/usr/bin/python3.11') }} -m venv"
+      become_user: "{{ app_user }}"
+
+    - name: Install database driver package
+      ansible.builtin.pip:
         name:
           - mysqlclient
         virtualenv: "{{ app_root }}/.venv"
-        virtualenv_command: "{{ python_executable | default('/usr/bin/python3.11') }} -m venv"
       become_user: "{{ app_user }}"
 
     - name: Run database schema migrations

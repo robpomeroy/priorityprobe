@@ -82,16 +82,8 @@ def generate_framework_markdown(
         if decs.exists():
             lines.append("\n# Cross-Domain Decision Assessments\n")
             for dec in decs:
-                lines.append(f"## Decision: {dec.title}")
-                lines.append(f"**Status:** {dec.get_status_display()}")
-                lines.append(f"\n**Proposal / Opportunity:**\n{dec.proposal_description}\n")
-                if dec.benefits_and_costs:
-                    lines.append(f"**Benefits and Costs Considered:**\n{dec.benefits_and_costs}\n")
-                if dec.unresolved_questions:
-                    lines.append(f"**Unresolved Questions & Assumptions:**\n{dec.unresolved_questions}\n")
-                if dec.decision_outcome:
-                    lines.append(f"**Outcome / Decision Made:**\n{dec.decision_outcome}\n")
-                lines.append("---")
+                lines.append(generate_decision_markdown(dec, include_instructions=False))
+                lines.append("\n---\n")
 
     # Optional saved thinking partner reflections
     if include_reflections:

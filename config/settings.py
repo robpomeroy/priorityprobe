@@ -140,8 +140,8 @@ LOGOUT_REDIRECT_URL = "accounts:login"
 
 # Trust X-Forwarded-Proto from reverse proxy (e.g. Nginx TLS terminator)
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-SESSION_COOKIE_SECURE = not DEBUG
-CSRF_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", str(not DEBUG)).lower() in ("true", "1")
+CSRF_COOKIE_SECURE = os.environ.get("CSRF_COOKIE_SECURE", str(not DEBUG)).lower() in ("true", "1")
 
 # Allowlisted Ollama hosts in hosted deployments (comma-separated, e.g. "ollama,host.docker.internal")
 OLLAMA_ALLOWED_HOSTS = [h.strip() for h in os.environ.get("OLLAMA_ALLOWED_HOSTS", "").split(",") if h.strip()]

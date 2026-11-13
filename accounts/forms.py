@@ -104,6 +104,16 @@ def validate_llm_api_base(provider: str, api_base: str):
     elif provider in ("ollama", "custom"):
         if not is_safe_ollama_endpoint(hostname):
             raise ValidationError(f"Disallowed {provider} destination: private, link-local, or unresolvable internal hostnames are prohibited.")
+        if provider == "custom":
+            is_loopback = hostname in ("localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1")
+            if not is_loopback:
+                try:
+                    if ipaddress.ip_address(hostname).is_loopback:
+                        is_loopback = True
+                except ValueError:
+                    pass
+            if not is_loopback and parsed.scheme != "https":
+                raise ValidationError("Custom remote API base URL must use HTTPS to protect credentials and data.")
 
     return api_base
 

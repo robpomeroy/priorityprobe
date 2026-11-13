@@ -129,7 +129,7 @@ def decision_compare_view(request, framework_id=None):
             framework = Framework.objects.create(owner=request.user, name="My Priorities")
 
     all_objectives = Objective.objects.filter(primary_domain__framework=framework).select_related("primary_domain").prefetch_related("whys", "related_domains")
-    all_goals = Goal.objects.filter(primary_domain__framework=framework).select_related("primary_domain").prefetch_related("objectives", "related_domains")
+    all_goals = Goal.objects.filter(primary_domain__framework=framework).select_related("primary_domain").prefetch_related("objectives__whys", "related_domains")
 
     compare_type = request.POST.get("type") or request.GET.get("type", "objectives")
     selected_raw = request.GET.getlist("selected") or request.POST.getlist("selected")
@@ -191,7 +191,11 @@ def decision_compare_view(request, framework_id=None):
                     whys_list = [f"{w.title} {'[NON-NEGOTIABLE]' if w.is_non_negotiable else ''}" for w in item.whys.all()]
                     summary_lines.append(f"- **Connected Whys:** {', '.join(whys_list) or 'None'}")
                 elif compare_type == "goals":
-                    objs_list = [o.title for o in item.objectives.all()]
+                    objs_list = []
+                    for o in item.objectives.all():
+                        whys_items = [f"{w.title}{' [NON-NEGOTIABLE]' if w.is_non_negotiable else ''}" for w in o.whys.all()]
+                        whys_str = f" (Whys: {', '.join(whys_items)})" if whys_items else ""
+                        objs_list.append(f"{o.title}{whys_str}")
                     summary_lines.append(f"- **Parent Objectives:** {', '.join(objs_list) or 'None'}")
                     if item.target_date:
                         summary_lines.append(f"- **Target Date:** {item.target_date}")

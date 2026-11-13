@@ -17,7 +17,7 @@
                     This Markdown document includes your structured priorities along with complete facilitator instructions. You can paste it directly into ChatGPT, Claude, Gemini, or any local LLM to use as an external thinking partner.
                 </p>
 
-                {% if all_domains %}
+                {% if framework %}
                 <!-- Custom Export Builder Controls -->
                 <div class="card bg-light border p-3 mb-3">
                     <form method="get" class="small">
@@ -25,12 +25,15 @@
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label class="form-label fw-semibold text-muted mb-1">Domains to Include:</label>
+                                <input type="hidden" name="domains" value="">
                                 <div class="d-flex flex-wrap gap-2">
                                     {% for d in all_domains %}
                                         <div class="form-check form-check-inline border rounded px-2 py-1 bg-white">
-                                            <input class="form-check-input ms-0 me-1" type="checkbox" name="domains" value="{{ d.id }}" id="exp-d-{{ d.id }}" {% if d.id in selected_domain_ids %}checked{% endif %}>
+                                            <input class="form-check-input ms-0 me-1" type="checkbox" name="domains" value="{{ d.id }}" id="exp-d-{{ d.id }}" {% if selected_domain_ids is None or d.id in selected_domain_ids %}checked{% endif %}>
                                             <label class="form-check-label" for="exp-d-{{ d.id }}">{{ d.name }}</label>
                                         </div>
+                                    {% empty %}
+                                        <span class="text-muted small">No domains in framework.</span>
                                     {% endfor %}
                                 </div>
                             </div>
@@ -51,6 +54,7 @@
 
                             <div class="col-12 d-flex flex-wrap gap-3 align-items-center pt-1">
                                 <div class="form-check">
+                                    <input type="hidden" name="instructions" value="0">
                                     <input class="form-check-input" type="checkbox" name="instructions" value="1" id="exp-inst" {% if include_instructions %}checked{% endif %}>
                                     <label class="form-check-label" for="exp-inst">Include LLM Facilitator Instructions Header</label>
                                 </div>

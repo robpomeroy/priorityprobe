@@ -1,4 +1,10 @@
 ---
+- name: Validate SSL requirement for non-localhost environments
+  ansible.builtin.assert:
+    that:
+      - enable_ssl or (server_domain in ['localhost', '127.0.0.1', '::1'])
+    fail_msg: "enable_ssl: false is only supported for local development (localhost / 127.0.0.1). Non-localhost environments must enable SSL."
+
 - name: Install Apache (httpd) and mod_ssl packages
   ansible.builtin.dnf:
     name:

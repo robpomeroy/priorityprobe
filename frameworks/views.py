@@ -1,6 +1,7 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
+from django.db import transaction
 from django.http import HttpResponse, HttpResponseForbidden
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -220,46 +221,49 @@ from datetime import timedelta
 def domain_move_view(request, domain_id, direction):
     if request.method != "POST":
         return HttpResponseForbidden()
-    domain = get_object_or_404(Domain, id=domain_id, framework__owner=request.user)
-    fw = domain.framework
-    all_domains = list(fw.domains.order_by("display_order", "id"))
-    idx = all_domains.index(domain)
+    with transaction.atomic():
+        domain = get_object_or_404(Domain, id=domain_id, framework__owner=request.user)
+        fw = Framework.objects.select_for_update().get(id=domain.framework_id)
+        all_domains = list(fw.domains.order_by("display_order", "id"))
+        idx = all_domains.index(domain)
 
-    target_idx = None
-    if direction == "up" and idx > 0:
-        target_idx = idx - 1
-    elif direction == "down" and idx < len(all_domains) - 1:
-        target_idx = idx + 1
+        target_idx = None
+        if direction == "up" and idx > 0:
+            target_idx = idx - 1
+        elif direction == "down" and idx < len(all_domains) - 1:
+            target_idx = idx + 1
 
-    if target_idx is not None:
-        all_domains[idx], all_domains[target_idx] = all_domains[target_idx], all_domains[idx]
-        for new_order, d in enumerate(all_domains, start=1):
-            if d.display_order != new_order:
-                d.display_order = new_order
-                d.save(update_fields=["display_order"])
+        if target_idx is not None:
+            all_domains[idx], all_domains[target_idx] = all_domains[target_idx], all_domains[idx]
+            for new_order, d in enumerate(all_domains, start=1):
+                if d.display_order != new_order:
+                    d.display_order = new_order
+                    d.save(update_fields=["display_order"])
 
-    return redirect("frameworks:workspace_detail", framework_id=fw.id)
+    return redirect("frameworks:workspace_detail", framework_id=domain.framework_id)
 
 @login_required
 def why_move_view(request, why_id, direction):
     if request.method != "POST":
         return HttpResponseForbidden()
-    why = get_object_or_404(Why, id=why_id, domain__framework__owner=request.user)
-    all_whys = list(why.domain.whys.order_by("display_order", "id"))
-    idx = all_whys.index(why)
+    with transaction.atomic():
+        why = get_object_or_404(Why, id=why_id, domain__framework__owner=request.user)
+        dom = Domain.objects.select_for_update().get(id=why.domain_id)
+        all_whys = list(dom.whys.order_by("display_order", "id"))
+        idx = all_whys.index(why)
 
-    target_idx = None
-    if direction == "up" and idx > 0:
-        target_idx = idx - 1
-    elif direction == "down" and idx < len(all_whys) - 1:
-        target_idx = idx + 1
+        target_idx = None
+        if direction == "up" and idx > 0:
+            target_idx = idx - 1
+        elif direction == "down" and idx < len(all_whys) - 1:
+            target_idx = idx + 1
 
-    if target_idx is not None:
-        all_whys[idx], all_whys[target_idx] = all_whys[target_idx], all_whys[idx]
-        for new_order, w in enumerate(all_whys, start=1):
-            if w.display_order != new_order:
-                w.display_order = new_order
-                w.save(update_fields=["display_order"])
+        if target_idx is not None:
+            all_whys[idx], all_whys[target_idx] = all_whys[target_idx], all_whys[idx]
+            for new_order, w in enumerate(all_whys, start=1):
+                if w.display_order != new_order:
+                    w.display_order = new_order
+                    w.save(update_fields=["display_order"])
 
     return redirect("frameworks:workspace_detail", framework_id=why.domain.framework_id)
 

@@ -48,11 +48,13 @@ def chat_view(request, framework_id):
         if selected_decision_raw:
             try:
                 selected_decision_ids = [int(x) for x in selected_decision_raw if str(x).isdigit()]
-                decs = DecisionRecord.objects.filter(id__in=selected_decision_ids, framework=framework)
+                decs = DecisionRecord.objects.filter(id__in=selected_decision_ids, framework=framework).prefetch_related(
+                    "affected_domains", "relevant_whys", "supporting_objectives", "conflicting_objectives"
+                )
                 if decs.exists():
                     context_md += "\n\n# Selected Decision Assessments Context:\n"
                     for d in decs:
-                        context_md += f"\n## Decision: {d.title}\nStatus: {d.get_status_display()}\nProposal: {d.proposal_description}\n"
+                        context_md += f"\n{generate_decision_markdown(d, include_instructions=False)}\n"
             except (ValueError, TypeError):
                 pass
 
@@ -60,7 +62,11 @@ def chat_view(request, framework_id):
         if include_history:
             recent_refs = list(reflections[:2])
             for r in reversed(recent_refs):
-                history.append({"role": "user", "content": r.user_prompt})
+                if r.context_snapshot:
+                    user_content = f"Here is my current Priorities Framework context:\n\n{r.context_snapshot}\n\nUser Question/Scenario:\n{r.user_prompt}"
+                else:
+                    user_content = r.user_prompt
+                history.append({"role": "user", "content": user_content})
                 history.append({"role": "assistant", "content": r.llm_response})
 
         success, response_text = generate_reflection(

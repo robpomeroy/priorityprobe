@@ -1,6 +1,26 @@
+import contextlib
+import socket
 import litellm
 from django.conf import settings
 from typing import List, Dict, Optional, Tuple
+
+@contextlib.contextmanager
+def _pinned_dns(target_host: str, target_port: int, safe_ip: str):
+    orig_getaddrinfo = socket.getaddrinfo
+    def custom_getaddrinfo(host, port, *args, **kwargs):
+        if host and host.lower() == target_host.lower():
+            is_v6 = ":" in safe_ip
+            family = socket.AF_INET6 if is_v6 else socket.AF_INET
+            resolved_port = port if port is not None else target_port
+            sockaddr = (safe_ip, resolved_port, 0, 0) if is_v6 else (safe_ip, resolved_port)
+            return [(family, socket.SOCK_STREAM, 6, "", sockaddr)]
+        return orig_getaddrinfo(host, port, *args, **kwargs)
+
+    socket.getaddrinfo = custom_getaddrinfo
+    try:
+        yield
+    finally:
+        socket.getaddrinfo = orig_getaddrinfo
 
 SYSTEM_FACILITATOR_PROMPT = """You are a facilitator, sounding board, and analytical assistant for PrioritySuite, a personal priorities and decision-making framework suite.
 
@@ -78,7 +98,7 @@ def generate_reflection(
         normalized_model = f"gemini/{normalized_model}"
     elif provider == "anthropic" and not normalized_model.startswith("anthropic/"):
         normalized_model = f"anthropic/{normalized_model}"
-    elif provider == "openai" and not (normalized_model.startswith("openai/") or "/" in normalized_model):
+    elif provider == "openai" and not normalized_model.startswith("openai/"):
         normalized_model = f"openai/{normalized_model}"
 
     # Validate api_base to prevent SSRF and DNS rebinding
@@ -96,10 +116,10 @@ def generate_reflection(
 
     pinned_api_base = resolved_api_base
     extra_headers = {}
+    dns_pin_target = None
 
     if resolved_api_base and provider in ("ollama", "custom"):
         import ipaddress
-        import socket
         from urllib.parse import urlparse, urlunparse
         from accounts.forms import is_safe_ollama_endpoint
 
@@ -112,18 +132,29 @@ def generate_reflection(
             if not addr_infos:
                 return False, f"Could not resolve destination host '{host_str}'."
 
+            allowlist = getattr(settings, "OLLAMA_ALLOWED_HOSTS", None) or []
+            host_explicitly_allowlisted = (host_str in allowlist)
+
             resolved_ips = []
             for family, socktype, proto, canonname, sockaddr in addr_infos:
                 ip_str = sockaddr[0]
-                if not is_safe_ollama_endpoint(ip_str):
+                if ip_str in ("169.254.169.254", "metadata.google.internal"):
+                    return False, f"Outbound connection blocked: destination {ip_str} is private or restricted."
+                if not host_explicitly_allowlisted and not is_safe_ollama_endpoint(ip_str):
                     return False, f"Outbound connection blocked: destination {ip_str} is private or restricted."
                 resolved_ips.append(ip_str)
 
             safe_ip = resolved_ips[0]
             safe_ip_formatted = f"[{safe_ip}]" if ":" in safe_ip else safe_ip
-            pinned_netloc = f"{safe_ip_formatted}:{port}" if port else safe_ip_formatted
-            pinned_api_base = urlunparse(parsed._replace(netloc=pinned_netloc))
+
+            if parsed.scheme == "https":
+                pinned_api_base = resolved_api_base
+            else:
+                pinned_netloc = f"{safe_ip_formatted}:{port}" if port else safe_ip_formatted
+                pinned_api_base = urlunparse(parsed._replace(netloc=pinned_netloc))
+
             if host_str and host_str != safe_ip:
+                dns_pin_target = (host_str, port or (443 if parsed.scheme == "https" else 80), safe_ip)
                 extra_headers["Host"] = host_str
         except Exception as exc:
             return False, f"Destination safety check failed: {str(exc)}"
@@ -158,7 +189,11 @@ def generate_reflection(
         kwargs["extra_headers"] = extra_headers
 
     try:
-        response = litellm.completion(**kwargs)
+        if dns_pin_target:
+            with _pinned_dns(*dns_pin_target):
+                response = litellm.completion(**kwargs)
+        else:
+            response = litellm.completion(**kwargs)
         content = response.choices[0].message.content
         return True, content
     except Exception as exc:

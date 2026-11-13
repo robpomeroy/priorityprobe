@@ -56,15 +56,14 @@
                     <div class="card card-why p-3 mb-3 border">
                         <div class="d-flex justify-content-between align-items-start">
                             <span class="badge bg-light text-muted border small">{{ why.domain.name }}</span>
-                            <div id="review-why-{{ why.id }}">
+                            <div id="review-why-{{ why.id }}" class="d-flex align-items-center gap-1">
                                 {% if why.last_reviewed_at %}
                                     <span class="badge bg-sage text-white small">Reviewed {{ why.last_reviewed_at }}</span>
-                                {% else %}
-                                    <form method="post" action="{% url 'frameworks:mark_reviewed' 'why' why.id %}" hx-post="{% url 'frameworks:mark_reviewed' 'why' why.id %}" hx-target="#review-why-{{ why.id }}">
-                                        {% csrf_token %}
-                                        <button type="submit" class="btn btn-outline-secondary btn-sm py-0 px-1 small">Mark Reviewed</button>
-                                    </form>
                                 {% endif %}
+                                <form method="post" action="{% url 'frameworks:mark_reviewed' 'why' why.id %}" hx-post="{% url 'frameworks:mark_reviewed' 'why' why.id %}" hx-target="#review-why-{{ why.id }}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-outline-secondary btn-sm py-0 px-1 small">Mark Reviewed</button>
+                                </form>
                             </div>
                         </div>
                         <div class="fw-semibold mt-2">{{ why.title }}</div>
@@ -90,15 +89,14 @@
                     <div class="card card-objective p-3 mb-3 border">
                         <div class="d-flex justify-content-between align-items-start">
                             <span class="badge bg-light text-muted border small">{{ obj.primary_domain.name }}</span>
-                            <div id="review-obj-{{ obj.id }}">
+                            <div id="review-obj-{{ obj.id }}" class="d-flex align-items-center gap-1">
                                 {% if obj.last_reviewed_at %}
                                     <span class="badge bg-sage text-white small">Reviewed {{ obj.last_reviewed_at }}</span>
-                                {% else %}
-                                    <form method="post" action="{% url 'frameworks:mark_reviewed' 'objective' obj.id %}" hx-post="{% url 'frameworks:mark_reviewed' 'objective' obj.id %}" hx-target="#review-obj-{{ obj.id }}">
-                                        {% csrf_token %}
-                                        <button type="submit" class="btn btn-outline-secondary btn-sm py-0 px-1 small">Mark Reviewed</button>
-                                    </form>
                                 {% endif %}
+                                <form method="post" action="{% url 'frameworks:mark_reviewed' 'objective' obj.id %}" hx-post="{% url 'frameworks:mark_reviewed' 'objective' obj.id %}" hx-target="#review-obj-{{ obj.id }}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-outline-secondary btn-sm py-0 px-1 small">Mark Reviewed</button>
+                                </form>
                             </div>
                         </div>
                         <div class="fw-semibold mt-2 d-flex justify-content-between align-items-center">
@@ -137,15 +135,14 @@
                     <div class="card card-goal p-3 mb-3 border">
                         <div class="d-flex justify-content-between align-items-start">
                             <span class="badge bg-light text-muted border small">{{ goal.primary_domain.name }}</span>
-                            <div id="review-goal-{{ goal.id }}">
+                            <div id="review-goal-{{ goal.id }}" class="d-flex align-items-center gap-1">
                                 {% if goal.last_reviewed_at %}
                                     <span class="badge bg-sage text-white small">Reviewed {{ goal.last_reviewed_at }}</span>
-                                {% else %}
-                                    <form method="post" action="{% url 'frameworks:mark_reviewed' 'goal' goal.id %}" hx-post="{% url 'frameworks:mark_reviewed' 'goal' goal.id %}" hx-target="#review-goal-{{ goal.id }}">
-                                        {% csrf_token %}
-                                        <button type="submit" class="btn btn-outline-secondary btn-sm py-0 px-1 small">Mark Reviewed</button>
-                                    </form>
                                 {% endif %}
+                                <form method="post" action="{% url 'frameworks:mark_reviewed' 'goal' goal.id %}" hx-post="{% url 'frameworks:mark_reviewed' 'goal' goal.id %}" hx-target="#review-goal-{{ goal.id }}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-outline-secondary btn-sm py-0 px-1 small">Mark Reviewed</button>
+                                </form>
                             </div>
                         </div>
                         <div class="fw-semibold mt-2 d-flex justify-content-between align-items-center">

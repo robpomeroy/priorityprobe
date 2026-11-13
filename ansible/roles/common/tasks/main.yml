@@ -1,8 +1,19 @@
 ---
-- name: Install EPEL and essential system build packages on Oracle Linux / RHEL
+- name: Bootstrap EPEL on Oracle Linux 9
+  ansible.builtin.dnf:
+    name: oracle-epel-release-el9
+    state: present
+  when: ansible_distribution == "OracleLinux" and ansible_distribution_major_version == "9"
+
+- name: Bootstrap EPEL on non-Oracle Linux distributions
+  ansible.builtin.dnf:
+    name: epel-release
+    state: present
+  when: ansible_distribution != "OracleLinux"
+
+- name: Install essential system build packages on Oracle Linux / RHEL
   ansible.builtin.dnf:
     name:
-      - epel-release
       - git
       - python3.11
       - python3.11-pip
@@ -43,5 +54,5 @@
     group: "{{ app_group }}"
     home: "{{ app_root }}"
     shell: /sbin/nologin
-    create_home: true
+    create_home: false
     state: present

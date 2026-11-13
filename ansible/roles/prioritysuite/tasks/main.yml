@@ -15,14 +15,19 @@
     force: true
   become_user: "{{ app_user }}"
 
-- name: Create Python virtual environment and install dependencies
+- name: Create Python virtual environment and install requirements
   ansible.builtin.pip:
     requirements: "{{ app_root }}/requirements.txt"
-    name:
-      - mysqlclient
     virtualenv: "{{ app_root }}/.venv"
     virtualenv_command: "{{ python_executable | default('/usr/bin/python3.11') }} -m venv"
     extra_args: "--upgrade"
+  become_user: "{{ app_user }}"
+
+- name: Install database driver package
+  ansible.builtin.pip:
+    name:
+      - mysqlclient
+    virtualenv: "{{ app_root }}/.venv"
   become_user: "{{ app_user }}"
 
 - name: Deploy .env configuration file
