@@ -30,14 +30,15 @@ def settings_view(request):
     config, _ = UserLLMConfig.objects.get_or_create(user=request.user)
     if request.method == "POST":
         old_provider = config.provider
+        old_api_base = (config.api_base or "").strip()
         form = UserLLMConfigForm(request.POST, instance=config)
         if form.is_valid():
             cfg = form.save(commit=False)
             new_key = form.cleaned_data.get("raw_api_key")
             if new_key:
                 cfg.api_key = new_key
-            elif cfg.provider != old_provider:
-                # Do not retain previous provider's key when provider changes
+            elif cfg.provider != old_provider or (cfg.api_base or "").strip() != old_api_base:
+                # Do not retain previous key when provider or api_base changes without a new key
                 cfg.api_key = ""
             cfg.save()
             messages.success(request, "Settings updated successfully.")

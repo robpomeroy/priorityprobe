@@ -1,56 +1,53 @@
-import contextlib
+import os
 import socket
-import threading
-import litellm
-from django.conf import settings
 from typing import List, Dict, Optional, Tuple
+from urllib.parse import urlparse
+import httpx
+import litellm
+import openai
+from django.conf import settings
 
-_dns_thread_local = threading.local()
-_original_getaddrinfo = socket.getaddrinfo
+# Prevent LiteLLM from making outbound network calls to download cost maps on init
+os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+litellm.telemetry = False
+litellm.suppress_debug_info = True
 
-def _coerce_port(port, default_port=0):
-    if port is None or port == 0:
-        return default_port
-    if isinstance(port, int):
-        return port
-    if isinstance(port, str):
-        if port.isdigit():
-            return int(port)
+class SSRFSafeTransport(httpx.HTTPTransport):
+    """
+    HTTP transport that enforces SSRF validation on every destination host/IP
+    and disables automatic redirect following at the transport layer.
+    """
+    def __init__(self, allowlist: Optional[List[str]] = None, **kwargs):
+        self.allowlist = {h.strip().lower() for h in (allowlist or []) if h.strip()}
+        super().__init__(**kwargs)
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        from accounts.forms import is_safe_ollama_endpoint
+        host = (request.url.host or "").strip().lower()
+        port = request.url.port or (443 if request.url.scheme == "https" else 80)
+
+        if not host:
+            raise ValueError("Invalid request: host is empty.")
+
+        if host in ("169.254.169.254", "metadata.google.internal"):
+            raise ValueError(f"Outbound connection blocked: destination {host} is private or restricted.")
+
+        # Check explicit hostname allowlist
+        if host in self.allowlist or ("localhost" in self.allowlist and host in ("127.0.0.1", "::1", "0:0:0:0:0:0:0:1")):
+            return super().handle_request(request)
+
+        # Resolve host to IP addresses (supports dual-stack IPv4/IPv6)
         try:
-            return socket.getservbyname(port)
-        except (OSError, socket.error):
-            return default_port
-    return default_port
+            addr_infos = socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        except Exception as exc:
+            raise ValueError(f"Could not resolve destination host '{host}': {exc}")
 
-def _thread_scoped_getaddrinfo(host, port, *args, **kwargs):
-    pinned = getattr(_dns_thread_local, "pinned_dns", None)
-    if pinned and host:
-        host_key = host.lower()
-        if host_key in pinned:
-            safe_ip, target_port = pinned[host_key]
-            is_v6 = ":" in safe_ip
-            family = socket.AF_INET6 if is_v6 else socket.AF_INET
-            resolved_port = _coerce_port(port, target_port)
-            sockaddr = (safe_ip, resolved_port, 0, 0) if is_v6 else (safe_ip, resolved_port)
-            return [(family, socket.SOCK_STREAM, 6, "", sockaddr)]
-    return _original_getaddrinfo(host, port, *args, **kwargs)
+        for family, socktype, proto, canonname, sockaddr in addr_infos:
+            ip_str = sockaddr[0]
+            if ip_str in ("169.254.169.254", "metadata.google.internal") or not is_safe_ollama_endpoint(ip_str):
+                raise ValueError(f"Outbound connection blocked: destination {ip_str} is private or restricted.")
 
-socket.getaddrinfo = _thread_scoped_getaddrinfo
-
-@contextlib.contextmanager
-def _pinned_dns(target_host: str, target_port: int, safe_ip: str):
-    if not hasattr(_dns_thread_local, "pinned_dns") or _dns_thread_local.pinned_dns is None:
-        _dns_thread_local.pinned_dns = {}
-    host_key = target_host.lower()
-    previous = _dns_thread_local.pinned_dns.get(host_key)
-    _dns_thread_local.pinned_dns[host_key] = (safe_ip, target_port)
-    try:
-        yield
-    finally:
-        if previous is None:
-            _dns_thread_local.pinned_dns.pop(host_key, None)
-        else:
-            _dns_thread_local.pinned_dns[host_key] = previous
+        return super().handle_request(request)
 
 SYSTEM_FACILITATOR_PROMPT = """You are a facilitator, sounding board, and analytical assistant for PrioritySuite, a personal priorities and decision-making framework suite.
 
@@ -145,21 +142,14 @@ def generate_reflection(
         except ValidationError as e:
             return False, f"Invalid API base URL: {'; '.join(e.messages)}"
 
-    pinned_api_base = resolved_api_base
-    extra_headers = {}
-    dns_pin_target = None
-
     if resolved_api_base and provider in ("ollama", "custom"):
-        import ipaddress
-        from urllib.parse import urlparse, urlunparse
         from accounts.forms import is_safe_ollama_endpoint
-
         parsed = urlparse(resolved_api_base)
-        host_str = parsed.hostname or ""
+        host_str = (parsed.hostname or "").strip()
         port = parsed.port
 
         try:
-            addr_infos = socket.getaddrinfo(host_str, port or 80, socket.AF_UNSPEC)
+            addr_infos = socket.getaddrinfo(host_str, port or 80, socket.AF_UNSPEC, socket.SOCK_STREAM)
             if not addr_infos:
                 return False, f"Could not resolve destination host '{host_str}'."
 
@@ -167,27 +157,12 @@ def generate_reflection(
             normalized_allowlist = {h.strip().lower() for h in allowlist if h.strip()}
             host_explicitly_allowlisted = (host_str.lower() in normalized_allowlist)
 
-            resolved_ips = []
             for family, socktype, proto, canonname, sockaddr in addr_infos:
                 ip_str = sockaddr[0]
                 if ip_str in ("169.254.169.254", "metadata.google.internal"):
                     return False, f"Outbound connection blocked: destination {ip_str} is private or restricted."
                 if not host_explicitly_allowlisted and not is_safe_ollama_endpoint(ip_str):
                     return False, f"Outbound connection blocked: destination {ip_str} is private or restricted."
-                resolved_ips.append(ip_str)
-
-            safe_ip = resolved_ips[0]
-            safe_ip_formatted = f"[{safe_ip}]" if ":" in safe_ip else safe_ip
-
-            if parsed.scheme == "https":
-                pinned_api_base = resolved_api_base
-            else:
-                pinned_netloc = f"{safe_ip_formatted}:{port}" if port else safe_ip_formatted
-                pinned_api_base = urlunparse(parsed._replace(netloc=pinned_netloc))
-
-            if host_str and host_str != safe_ip:
-                dns_pin_target = (host_str, port or (443 if parsed.scheme == "https" else 80), safe_ip)
-                extra_headers["Host"] = host_str
         except Exception as exc:
             return False, f"Destination safety check failed: {str(exc)}"
 
@@ -215,18 +190,22 @@ def generate_reflection(
     if api_key:
         kwargs["api_key"] = api_key
 
-    if pinned_api_base:
-        kwargs["api_base"] = pinned_api_base
-
-    if extra_headers:
-        kwargs["extra_headers"] = extra_headers
+    if resolved_api_base:
+        kwargs["api_base"] = resolved_api_base
 
     try:
-        if dns_pin_target:
-            with _pinned_dns(*dns_pin_target):
-                response = litellm.completion(**kwargs)
-        else:
-            response = litellm.completion(**kwargs)
+        if provider in ("ollama", "custom"):
+            allowlist = getattr(settings, "OLLAMA_ALLOWED_HOSTS", None) or []
+            transport = SSRFSafeTransport(allowlist=allowlist)
+            http_client = httpx.Client(transport=transport, follow_redirects=False, timeout=timeout)
+            client = openai.OpenAI(
+                base_url=resolved_api_base,
+                api_key=api_key or "sk-dummy",
+                http_client=http_client,
+            )
+            kwargs["client"] = client
+
+        response = litellm.completion(**kwargs)
         content = response.choices[0].message.content
         return True, content
     except Exception as exc:

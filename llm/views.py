@@ -28,7 +28,6 @@ def chat_view(request, framework_id):
         # User-selected context filters
         domains_filter_active = "context_filter_active" in request.POST or "selected_domains" in request.POST
         selected_domain_raw = request.POST.getlist("selected_domains")
-        selected_decision_raw = request.POST.getlist("selected_decisions")
         include_history = request.POST.get("include_history") == "1"
 
         if domains_filter_active:

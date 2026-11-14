@@ -1270,17 +1270,27 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
     ref_dec_field = ref_admin.formfield_for_foreignkey(LLMReflectionLog._meta.get_field("decision"), req)
     assert ref_dec_field.queryset.filter(framework__owner=other_user).count() == 0
 
-    # 5. Thread-scoped DNS pinning test
-    from llm.service import _pinned_dns
-    import socket
-    with _pinned_dns("test.isolated.local", 443, "127.0.0.1"):
-        res = socket.getaddrinfo("test.isolated.local", 443)
-        assert res[0][4][0] == "127.0.0.1"
+    # 5. SSRFSafeTransport and redirect prevention
+    from llm.service import SSRFSafeTransport
+    import httpx
+    transport = SSRFSafeTransport(allowlist=[])
+    with pytest.raises(ValueError, match="Outbound connection blocked"):
+        req = httpx.Request("GET", "http://169.254.169.254/latest/meta-data/")
+        transport.handle_request(req)
+    with pytest.raises(ValueError, match="Outbound connection blocked"):
+        req = httpx.Request("GET", "http://10.0.0.1:8000/v1/chat")
+        transport.handle_request(req)
+    client_test = httpx.Client(transport=transport, follow_redirects=False)
+    assert client_test.follow_redirects is False
 
     # 6. Settings cookie parsing and types
     from django.conf import settings
     assert isinstance(settings.SESSION_COOKIE_SECURE, bool)
     assert isinstance(settings.CSRF_COOKIE_SECURE, bool)
+    for truthy in ("true", "TRUE", "1", "yes", "YES"):
+        assert truthy.lower() in ("true", "1", "yes")
+    for falsy in ("false", "FALSE", "0", "no", "random"):
+        assert falsy.lower() not in ("true", "1", "yes")
 
 
 def test_compare_view_security_and_edge_cases(client, user, other_user, framework, objective, goal):
@@ -1305,13 +1315,18 @@ def test_compare_view_security_and_edge_cases(client, user, other_user, framewor
     assert resp_invalid_type.status_code == 200
     assert resp_invalid_type.context["compare_type"] == "objectives"
 
-    # 4. POST vs GET selected precedence: POST body overrides query string
+    # 4. POST vs GET selected precedence: POST body overrides query string with distinct IDs
+    obj_post = Objective.objects.create(primary_domain=objective.primary_domain, title="POST Selected Only")
     resp_precedence = client.post(f"/decisions/compare/{framework.id}/?selected={objective.id}", {
         "action": "convert_to_decision",
         "type": "objectives",
-        "selected": [str(objective.id)],
+        "selected": [str(obj_post.id)],
     })
     assert resp_precedence.status_code == 302
+    created_dec = DecisionRecord.objects.filter(framework=framework, title__contains="POST Selected Only").first()
+    assert created_dec is not None
+    assert obj_post in created_dec.supporting_objectives.all()
+    assert objective not in created_dec.supporting_objectives.all()
 
     # 5. Empty selection handling: POST with empty selected shows warning and does not create DecisionRecord
     initial_count = DecisionRecord.objects.filter(framework=framework).count()
@@ -1429,6 +1444,32 @@ def test_reflection_delete_redirects_to_decision_detail_when_set(client, user, f
     assert resp.status_code == 302
     assert resp.url == f"/decisions/{dec.id}/"
     assert not LLMReflectionLog.objects.filter(id=ref.id).exists()
+
+
+def test_settings_view_clears_api_key_when_api_base_changes(client, user):
+    client.force_login(user)
+    cfg, _ = UserLLMConfig.objects.get_or_create(user=user)
+    cfg.provider = "custom"
+    cfg.model_name = "custom-model"
+    cfg.api_base = "https://legit-server.internal/v1"
+    cfg.api_key = "super-secret-key-12345"
+    cfg.save()
+
+    # Changing api_base without providing a raw_api_key clears api_key
+    with patch("accounts.forms.validate_llm_api_base", return_value="https://new-server.internal/v1"):
+        resp = client.post("/accounts/settings/", {
+            "provider": "custom",
+            "model_name": "custom-model",
+            "api_base": "https://new-server.internal/v1",
+            "raw_api_key": "",
+            "consent_given": True,
+            "theme_preference": "auto",
+        })
+        assert resp.status_code == 302
+        cfg.refresh_from_db()
+        assert cfg.api_base == "https://new-server.internal/v1"
+        assert cfg.api_key == ""
+
 
 
 

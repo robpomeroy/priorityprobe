@@ -135,7 +135,7 @@ def decision_compare_view(request, framework_id=None):
     compare_type = raw_type if raw_type in ("objectives", "goals") else "objectives"
 
     if request.method == "POST":
-        selected_raw = request.POST.getlist("selected") or request.GET.getlist("selected")
+        selected_raw = request.POST.getlist("selected")
     else:
         selected_raw = request.GET.getlist("selected")
 
