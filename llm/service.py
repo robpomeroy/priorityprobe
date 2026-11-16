@@ -24,7 +24,8 @@ class SSRFSafeTransport(httpx.HTTPTransport):
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         from accounts.forms import is_safe_ollama_endpoint
         original_host = (request.url.host or "").strip().lower()
-        port = request.url.port or (443 if request.url.scheme == "https" else 80)
+        original_port = request.url.port
+        port = original_port or (443 if request.url.scheme == "https" else 80)
 
         if not original_host:
             raise ValueError("Invalid request: host is empty.")
@@ -51,7 +52,10 @@ class SSRFSafeTransport(httpx.HTTPTransport):
 
         # Pin validated IP address on request to eliminate TOCTOU DNS rebinding
         if safe_ip:
-            request.headers["Host"] = original_host
+            is_default_port = (request.url.scheme == "https" and port == 443) or (request.url.scheme == "http" and port == 80)
+            formatted_host = f"[{original_host}]" if ":" in original_host and not original_host.startswith("[") else original_host
+            host_header_val = formatted_host if (not original_port or is_default_port) else f"{formatted_host}:{original_port}"
+            request.headers["Host"] = host_header_val
             if request.url.scheme == "https":
                 request.extensions["sni_hostname"] = original_host
             request.url = request.url.copy_with(host=safe_ip)
@@ -131,6 +135,11 @@ def generate_reflection(
     normalized_model = model_name.strip()
     if provider == "custom" and not normalized_model.startswith("openai/"):
         normalized_model = f"openai/{normalized_model}"
+    elif provider == "ollama":
+        if normalized_model.startswith("ollama/"):
+            normalized_model = normalized_model[len("ollama/"):]
+        if not normalized_model.startswith("openai/"):
+            normalized_model = f"openai/{normalized_model}"
     elif provider == "gemini" and not normalized_model.startswith("gemini/"):
         normalized_model = f"gemini/{normalized_model}"
     elif provider == "anthropic" and not normalized_model.startswith("anthropic/"):
@@ -142,6 +151,11 @@ def generate_reflection(
     resolved_api_base = api_base
     if not resolved_api_base and provider == "ollama":
         resolved_api_base = "http://localhost:11434"
+
+    if provider == "ollama" and resolved_api_base:
+        stripped_base = resolved_api_base.rstrip("/")
+        if not stripped_base.endswith("/v1"):
+            resolved_api_base = f"{stripped_base}/v1"
 
     if resolved_api_base or provider in ("ollama", "custom"):
         from accounts.forms import validate_llm_api_base
@@ -203,22 +217,16 @@ def generate_reflection(
         kwargs["api_base"] = resolved_api_base
 
     http_client = None
-    original_client_session = getattr(litellm, "client_session", None)
     try:
         if provider in ("ollama", "custom"):
             allowlist = getattr(settings, "OLLAMA_ALLOWED_HOSTS", None) or []
             transport = SSRFSafeTransport(allowlist=allowlist)
             http_client = httpx.Client(transport=transport, follow_redirects=False, timeout=timeout)
-            litellm.client_session = http_client
-
-            if provider == "custom":
-                kwargs["client"] = openai.OpenAI(
-                    base_url=resolved_api_base,
-                    api_key=api_key or "sk-dummy",
-                    http_client=http_client,
-                )
-            elif provider == "ollama":
-                kwargs["client"] = http_client
+            kwargs["client"] = openai.OpenAI(
+                base_url=resolved_api_base,
+                api_key=api_key or ("sk-dummy" if provider == "custom" else "ollama"),
+                http_client=http_client,
+            )
 
         response = litellm.completion(**kwargs)
         content = response.choices[0].message.content
@@ -226,6 +234,5 @@ def generate_reflection(
     except Exception as exc:
         return False, f"LLM Connection Error: {str(exc)}"
     finally:
-        litellm.client_session = original_client_session
         if http_client is not None:
             http_client.close()

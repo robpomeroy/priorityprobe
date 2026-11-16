@@ -1210,7 +1210,26 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
     # Invalid API base URL
     assert generate_reflection("ctx", "prompt", "openai", "gpt-4o", api_base="http://api.openai.com/v1")[0] is False
 
-    # LiteLLM exception handling
+    # LiteLLM exception handling and Ollama client session isolation
+    sentinel_session = object()
+    import litellm
+    litellm.client_session = sentinel_session
+    mock_resp = MagicMock()
+    mock_resp.choices = [MagicMock(message=MagicMock(content="Ollama reflection"))]
+    with patch("litellm.completion", return_value=mock_resp) as mock_comp, \
+         patch("accounts.forms.is_safe_ollama_endpoint", return_value=True):
+        ok, res = generate_reflection("ctx", "prompt", "ollama", "llama3")
+        assert ok is True
+        assert res == "Ollama reflection"
+        # Ensure litellm.client_session was not touched or mutated
+        assert litellm.client_session is sentinel_session
+        # Ensure client was passed as openai.OpenAI with /v1 endpoint and openai/ model prefix
+        call_kwargs = mock_comp.call_args[1]
+        assert call_kwargs["model"] == "openai/llama3"
+        assert call_kwargs["api_base"].endswith("/v1")
+        assert hasattr(call_kwargs["client"], "chat")
+    litellm.client_session = None
+
     with patch("litellm.completion", side_effect=RuntimeError("API down")), \
          patch("accounts.forms.is_safe_ollama_endpoint", return_value=True):
         ok, err = generate_reflection("ctx", "prompt", "ollama", "llama3")
@@ -1283,24 +1302,32 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
     client_test = httpx.Client(transport=transport, follow_redirects=False)
     assert client_test.follow_redirects is False
 
-    # IP pinning test: request.url is rewritten to the safe IP with Host header preserved
+    # IP pinning test: request.url is rewritten to the safe IP with Host header preserved (including non-default port)
     req_pin = httpx.Request("GET", "http://localhost:8000/v1/models")
     with patch("socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 8000))]):
         transport_pin = SSRFSafeTransport(allowlist=["localhost"])
         with patch.object(httpx.HTTPTransport, "handle_request", return_value=MagicMock()):
             transport_pin.handle_request(req_pin)
             assert req_pin.url.host == "127.0.0.1"
-            assert req_pin.headers["Host"] == "localhost"
+            assert req_pin.headers["Host"] == "localhost:8000"
 
-    # HTTPS IP pinning test: sni_hostname is set for TLS SNI validation
+    # HTTPS IP pinning test: sni_hostname is set without port for TLS SNI validation, Host preserves non-default port
     req_ssl = httpx.Request("GET", "https://localhost:8443/v1/models")
     with patch("socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 8443))]):
         transport_pin = SSRFSafeTransport(allowlist=["localhost"])
         with patch.object(httpx.HTTPTransport, "handle_request", return_value=MagicMock()):
             transport_pin.handle_request(req_ssl)
             assert req_ssl.url.host == "127.0.0.1"
-            assert req_ssl.headers["Host"] == "localhost"
+            assert req_ssl.headers["Host"] == "localhost:8443"
             assert req_ssl.extensions.get("sni_hostname") == "localhost"
+
+    # Default port test: port 80/443 is omitted from Host header
+    req_def = httpx.Request("GET", "http://localhost:80/v1/models")
+    with patch("socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 80))]):
+        transport_pin = SSRFSafeTransport(allowlist=["localhost"])
+        with patch.object(httpx.HTTPTransport, "handle_request", return_value=MagicMock()):
+            transport_pin.handle_request(req_def)
+            assert req_def.headers["Host"] == "localhost"
 
     # 6. Settings cookie types
     from django.conf import settings
