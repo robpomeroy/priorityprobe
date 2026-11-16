@@ -1,4 +1,5 @@
 import logging
+from urllib.parse import urlparse
 from django.shortcuts import render, redirect
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
@@ -103,9 +104,33 @@ def test_llm_connection_view(request):
     if success:
         messages.success(request, f"Connection verified successfully! ({provider}: {model_name})")
     else:
+        # Sanitize api_base and response_text before logging to prevent credential leakage (CWE-532)
+        sanitized_base = api_base
+        if api_base:
+            try:
+                parsed_base = urlparse(api_base)
+                if parsed_base.username or parsed_base.password:
+                    netloc = parsed_base.hostname or ""
+                    if parsed_base.port:
+                        netloc = f"{netloc}:{parsed_base.port}"
+                    sanitized_base = parsed_base._replace(netloc=netloc).geturl()
+            except Exception:
+                sanitized_base = "[invalid-url]"
+
+        sanitized_resp = response_text
+        if api_key and api_key in sanitized_resp:
+            sanitized_resp = sanitized_resp.replace(api_key, "[REDACTED]")
+        if api_base:
+            try:
+                parsed_base = urlparse(api_base)
+                if parsed_base.password and parsed_base.password in sanitized_resp:
+                    sanitized_resp = sanitized_resp.replace(parsed_base.password, "[REDACTED]")
+            except Exception:
+                pass
+
         logger.warning(
             "LLM test connection failure for user '%s' (%s/%s, base=%s): %s",
-            request.user.username, provider, model_name, api_base, response_text
+            request.user.username, provider, model_name, sanitized_base, sanitized_resp
         )
         # Preserve specific policy validation errors while sanitizing lower-level stack/connection traces
         if response_text.startswith("Invalid API base URL:") or response_text.startswith("Outbound connection blocked:"):

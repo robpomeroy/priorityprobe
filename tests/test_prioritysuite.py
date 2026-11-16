@@ -227,6 +227,28 @@ def test_review_and_mark_reviewed(client, user, why, objective, goal):
     why.refresh_from_db()
     assert why.last_reviewed_at is not None
 
+def test_status_update_with_update_fields(client, user, objective, goal):
+    client.force_login(user)
+    import datetime
+    test_date = datetime.date(2025, 1, 1)
+    objective.last_reviewed_at = test_date
+    objective.save()
+
+    # Post status change for objective: update_fields ensures last_reviewed_at is preserved
+    resp = client.post(f"/frameworks/objective/{objective.id}/status/", {"status": "PAUSED"})
+    assert resp.status_code == 302
+    objective.refresh_from_db()
+    assert objective.status == "PAUSED"
+    assert objective.last_reviewed_at == test_date
+
+    goal.last_reviewed_at = test_date
+    goal.save()
+    resp_g = client.post(f"/frameworks/goal/{goal.id}/status/", {"status": "COMPLETED"})
+    assert resp_g.status_code == 302
+    goal.refresh_from_db()
+    assert goal.status == "COMPLETED"
+    assert goal.last_reviewed_at == test_date
+
 # --- 3. Decisions Tests ---
 
 def test_decisions_workflow(client, user, framework, domain, why, objective):
@@ -846,10 +868,23 @@ def test_priority_comparison_view(client, user, framework, domain, objective, go
             "type": "objectives",
             "selected": [str(objective.id), str(obj2.id)],
             "prompt": "Evaluate trade-offs between craft and rest.",
-        }, follow=True)
-        assert resp_reflect.status_code == 200
-        assert resp_reflect.context["comparison_reflection"] == "Comparison reflection from AI"
+        })
+        assert resp_reflect.status_code == 302
         assert LLMReflectionLog.objects.filter(framework=framework, llm_response="Comparison reflection from AI").exists()
+
+        # Another comparison (different selected IDs) does NOT consume this reflection
+        resp_other = client.get(f"/decisions/compare/{framework.id}/?type=objectives&selected={objective.id}")
+        assert resp_other.status_code == 200
+        assert resp_other.context.get("comparison_reflection") is None
+
+        # The matching comparison consumes the reflection
+        resp_matching = client.get(f"/decisions/compare/{framework.id}/?type=objectives&selected={objective.id}&selected={obj2.id}")
+        assert resp_matching.status_code == 200
+        assert resp_matching.context["comparison_reflection"] == "Comparison reflection from AI"
+
+        # Subsequent visit to matching comparison no longer has the reflection
+        resp_consumed = client.get(f"/decisions/compare/{framework.id}/?type=objectives&selected={objective.id}&selected={obj2.id}")
+        assert resp_consumed.context.get("comparison_reflection") is None
 
     # POST action=convert_to_decision with type=goals in request body (without query param)
     resp_convert_goal = client.post(f"/decisions/compare/{framework.id}/", {
@@ -886,11 +921,26 @@ def test_llm_test_connection_endpoint(client, user):
         assert resp_ok.status_code == 302
         assert resp_ok.url == "/accounts/settings/"
 
-    # 4. Connection error test
-    with patch("llm.service.generate_reflection", return_value=(False, "Connection refused")):
-        resp_err = client.post("/accounts/settings/test-llm/")
+    # 4. Connection error test and log credential sanitization
+    with patch("llm.service.generate_reflection", return_value=(False, "Connection refused with key sk-secret-leak and user:secretpass")), \
+         patch("accounts.views.logger.warning") as mock_log_warn:
+        resp_err = client.post("/accounts/settings/test-llm/", {
+            "provider": "openrouter",
+            "model_name": "openrouter/anthropic/claude-3.5-sonnet",
+            "api_base": "https://user:secretpass@openrouter.ai/api/v1",
+            "raw_api_key": "sk-secret-leak",
+            "consent_given": "on",
+        })
         assert resp_err.status_code == 302
         assert resp_err.url == "/accounts/settings/"
+        assert mock_log_warn.called
+        log_args = mock_log_warn.call_args[0]
+        logged_base = log_args[4]
+        logged_resp = log_args[5]
+        assert "secretpass" not in logged_base
+        assert "user" not in logged_base
+        assert "sk-secret-leak" not in logged_resp
+        assert "secretpass" not in logged_resp
 
     # 5. Testing unsaved form POST values (e.g. changing provider/key in form before clicking Test)
     with patch("llm.service.generate_reflection", return_value=(True, "Verified unsaved settings")) as mock_test_gen:

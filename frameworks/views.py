@@ -235,7 +235,7 @@ def _handle_status_update(request, item, label):
     new_status = request.POST.get("status")
     if new_status in StatusChoices.values:
         item.status = new_status
-        item.save()
+        item.save(update_fields=["status", "updated_at"])
         messages.success(request, f"{label} status changed to {item.get_status_display()}.")
     next_url = request.POST.get("next") or request.META.get("HTTP_REFERER")
     if next_url and url_has_allowed_host_and_scheme(

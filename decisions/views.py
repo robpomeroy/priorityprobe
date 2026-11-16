@@ -153,7 +153,18 @@ def decision_compare_view(request, framework_id=None):
             selected_ids = list(all_objectives.values_list("id", flat=True)[:2])
         items = all_objectives.filter(id__in=selected_ids)
 
-    comparison_reflection = request.session.pop("comparison_reflection", None)
+    # Retrieve reflection scoped to the specific comparison (framework, type, selected IDs)
+    sorted_ids = sorted([str(x) for x in selected_ids])
+    comp_key = f"{framework.id}:{compare_type}:{','.join(sorted_ids)}"
+    comparison_reflection = None
+    reflections_dict = request.session.get("comparison_reflections")
+    if isinstance(reflections_dict, dict) and comp_key in reflections_dict:
+        comparison_reflection = reflections_dict.pop(comp_key)
+        request.session["comparison_reflections"] = reflections_dict
+        request.session.modified = True
+    elif "comparison_reflection" in request.session:
+        # Fallback for direct session assignment or backward compatibility
+        comparison_reflection = request.session.pop("comparison_reflection")
 
     if request.method == "POST":
         action = request.POST.get("action")
@@ -234,7 +245,14 @@ def decision_compare_view(request, framework_id=None):
                     llm_response=response_text,
                     provider_used=f"{llm_config.provider} ({llm_config.model_name})",
                 )
-                request.session["comparison_reflection"] = response_text
+                sorted_ids = sorted([str(x) for x in selected_ids])
+                comp_key = f"{framework.id}:{compare_type}:{','.join(sorted_ids)}"
+                reflections_dict = request.session.get("comparison_reflections", {})
+                if not isinstance(reflections_dict, dict):
+                    reflections_dict = {}
+                reflections_dict[comp_key] = response_text
+                request.session["comparison_reflections"] = reflections_dict
+                request.session.modified = True
                 messages.success(request, "Thinking partner reflection generated.")
                 query_parts = [f"type={compare_type}"] + [f"selected={x}" for x in selected_ids]
                 return redirect(f"{request.path}?{'&'.join(query_parts)}")
