@@ -61,7 +61,7 @@ def is_safe_ollama_endpoint(hostname: str) -> bool:
 
     return True
 
-def validate_llm_api_base(provider: str, api_base: str):
+def validate_llm_api_base(provider: str, api_base: str, api_key: str = None):
     if provider == "none":
         return api_base
     
@@ -111,16 +111,18 @@ def validate_llm_api_base(provider: str, api_base: str):
     elif provider in ("ollama", "custom"):
         if not is_safe_ollama_endpoint(hostname):
             raise ValidationError(f"Disallowed {provider} destination: private, link-local, or unresolvable internal hostnames are prohibited.")
-        if provider == "custom":
-            is_loopback = hostname in ("localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1")
-            if not is_loopback:
-                try:
-                    if ipaddress.ip_address(hostname).is_loopback:
-                        is_loopback = True
-                except ValueError:
-                    pass
-            if not is_loopback and parsed.scheme != "https":
+        is_loopback = hostname in ("localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1")
+        if not is_loopback:
+            try:
+                if ipaddress.ip_address(hostname).is_loopback:
+                    is_loopback = True
+            except ValueError:
+                pass
+        if not is_loopback and parsed.scheme != "https":
+            if provider == "custom":
                 raise ValidationError("Custom remote API base URL must use HTTPS to protect credentials and data.")
+            if provider == "ollama" and api_key:
+                raise ValidationError("Ollama remote API base URL must use HTTPS when an API key is configured to protect credentials.")
 
     return api_base
 
@@ -176,9 +178,11 @@ class UserLLMConfigForm(forms.ModelForm):
         cleaned_data = super().clean()
         provider = cleaned_data.get("provider")
         api_base = cleaned_data.get("api_base")
+        raw_api_key = (cleaned_data.get("raw_api_key") or "").strip()
+        has_key = bool(raw_api_key or (self.instance and getattr(self.instance, "api_key", "")))
         if provider:
             try:
-                validate_llm_api_base(provider, api_base or "")
+                validate_llm_api_base(provider, api_base or "", api_key=raw_api_key if has_key else None)
             except ValidationError as e:
                 self.add_error("api_base", e)
         return cleaned_data

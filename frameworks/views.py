@@ -346,7 +346,7 @@ def mark_reviewed_view(request, item_type, item_id):
         else:
             return HttpResponseForbidden()
         item.last_reviewed_at = today
-        item.save()
+        item.save(update_fields=["last_reviewed_at", "updated_at"])
         if request.headers.get("HX-Request"):
             return HttpResponse(f"<span class='badge bg-sage text-white'>Reviewed {today}</span>")
         messages.success(request, f"Marked as reviewed on {today}.")

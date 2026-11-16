@@ -227,6 +227,15 @@ def test_review_and_mark_reviewed(client, user, why, objective, goal):
     why.refresh_from_db()
     assert why.last_reviewed_at is not None
 
+    # Mark objective reviewed: verify update_fields preserves concurrent status changes
+    objective.status = "PAUSED"
+    objective.save()
+    resp_obj = client.post(f"/frameworks/review/mark/objective/{objective.id}/")
+    assert resp_obj.status_code == 302
+    objective.refresh_from_db()
+    assert objective.last_reviewed_at is not None
+    assert objective.status == "PAUSED"
+
 def test_status_update_with_update_fields(client, user, objective, goal):
     client.force_login(user)
     import datetime
@@ -1186,6 +1195,16 @@ def test_llm_api_base_validation():
     # Custom provider requires non-empty explicit API base URL
     with pytest.raises(ValidationError, match="Custom provider requires an explicit API Base URL"):
         validate_llm_api_base("custom", "")
+
+    # Remote Ollama endpoint with an API key requires HTTPS
+    with patch("accounts.forms.is_safe_ollama_endpoint", return_value=True):
+        with pytest.raises(ValidationError, match="Ollama remote API base URL must use HTTPS when an API key is configured"):
+            validate_llm_api_base("ollama", "http://remote-ollama.example.com:11434/v1", api_key="ollama-secret-key")
+        # Local Ollama with an API key is permitted over HTTP
+        assert validate_llm_api_base("ollama", "http://localhost:11434/v1", api_key="local-key") == "http://localhost:11434/v1"
+        assert validate_llm_api_base("ollama", "http://127.0.0.1:11434/v1", api_key="local-key") == "http://127.0.0.1:11434/v1"
+        # Remote Ollama with HTTPS and API key is permitted
+        assert validate_llm_api_base("ollama", "https://remote-ollama.example.com:11434/v1", api_key="ollama-secret-key") == "https://remote-ollama.example.com:11434/v1"
 
 
 def test_coverage_boosters(user, other_user, framework, domain, why, objective):

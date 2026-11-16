@@ -60,7 +60,7 @@
 
     - name: Verify application service health and readiness before proceeding
       ansible.builtin.uri:
-        url: "{{ health_check_url | default('http://' ~ (gunicorn_bind | default('127.0.0.1:8000') | regex_replace('^0\.0\.0\.0', '127.0.0.1')) ~ '/accounts/login/') }}"
+        url: "{{ health_check_url | default('http://' ~ (gunicorn_bind | default('127.0.0.1:8000') | regex_replace('^0[.]0[.]0[.]0', '127.0.0.1')) ~ '/accounts/login/') }}"
         status_code: 200
         timeout: 10
       register: health_check

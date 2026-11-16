@@ -3,12 +3,13 @@ import socket
 from typing import List, Dict, Optional, Tuple
 from urllib.parse import urlparse
 import httpx
+
+# Prevent LiteLLM from making outbound network calls to download cost maps on init
+os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 import litellm
 import openai
 from django.conf import settings
 
-# Prevent LiteLLM from making outbound network calls to download cost maps on init
-os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 litellm.telemetry = False
 litellm.suppress_debug_info = True
 
@@ -161,7 +162,7 @@ def generate_reflection(
         from accounts.forms import validate_llm_api_base
         from django.core.exceptions import ValidationError
         try:
-            validate_llm_api_base(provider, resolved_api_base or "")
+            validate_llm_api_base(provider, resolved_api_base or "", api_key=api_key)
         except ValidationError as e:
             return False, f"Invalid API base URL: {'; '.join(e.messages)}"
 
