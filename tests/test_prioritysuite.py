@@ -1270,7 +1270,7 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
     ref_dec_field = ref_admin.formfield_for_foreignkey(LLMReflectionLog._meta.get_field("decision"), req)
     assert ref_dec_field.queryset.filter(framework__owner=other_user).count() == 0
 
-    # 5. SSRFSafeTransport and redirect prevention
+    # 5. SSRFSafeTransport, IP pinning, and redirect prevention
     from llm.service import SSRFSafeTransport
     import httpx
     transport = SSRFSafeTransport(allowlist=[])
@@ -1283,14 +1283,29 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
     client_test = httpx.Client(transport=transport, follow_redirects=False)
     assert client_test.follow_redirects is False
 
-    # 6. Settings cookie parsing and types
+    # IP pinning test: request.url is rewritten to the safe IP with Host header preserved
+    req_pin = httpx.Request("GET", "http://localhost:8000/v1/models")
+    with patch("socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 8000))]):
+        transport_pin = SSRFSafeTransport(allowlist=["localhost"])
+        with patch.object(httpx.HTTPTransport, "handle_request", return_value=MagicMock()):
+            transport_pin.handle_request(req_pin)
+            assert req_pin.url.host == "127.0.0.1"
+            assert req_pin.headers["Host"] == "localhost"
+
+    # HTTPS IP pinning test: sni_hostname is set for TLS SNI validation
+    req_ssl = httpx.Request("GET", "https://localhost:8443/v1/models")
+    with patch("socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 8443))]):
+        transport_pin = SSRFSafeTransport(allowlist=["localhost"])
+        with patch.object(httpx.HTTPTransport, "handle_request", return_value=MagicMock()):
+            transport_pin.handle_request(req_ssl)
+            assert req_ssl.url.host == "127.0.0.1"
+            assert req_ssl.headers["Host"] == "localhost"
+            assert req_ssl.extensions.get("sni_hostname") == "localhost"
+
+    # 6. Settings cookie types
     from django.conf import settings
     assert isinstance(settings.SESSION_COOKIE_SECURE, bool)
     assert isinstance(settings.CSRF_COOKIE_SECURE, bool)
-    for truthy in ("true", "TRUE", "1", "yes", "YES"):
-        assert truthy.lower() in ("true", "1", "yes")
-    for falsy in ("false", "FALSE", "0", "no", "random"):
-        assert falsy.lower() not in ("true", "1", "yes")
 
 
 def test_compare_view_security_and_edge_cases(client, user, other_user, framework, objective, goal):
@@ -1469,6 +1484,31 @@ def test_settings_view_clears_api_key_when_api_base_changes(client, user):
         cfg.refresh_from_db()
         assert cfg.api_base == "https://new-server.internal/v1"
         assert cfg.api_key == ""
+
+
+def test_cookie_secure_settings_env_parsing(monkeypatch):
+    import importlib
+    import config.settings
+
+    # Test "yes" / "1" -> True
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "yes")
+    monkeypatch.setenv("CSRF_COOKIE_SECURE", "1")
+    importlib.reload(config.settings)
+    assert config.settings.SESSION_COOKIE_SECURE is True
+    assert config.settings.CSRF_COOKIE_SECURE is True
+
+    # Test "false" / "0" -> False
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "false")
+    monkeypatch.setenv("CSRF_COOKIE_SECURE", "0")
+    importlib.reload(config.settings)
+    assert config.settings.SESSION_COOKIE_SECURE is False
+    assert config.settings.CSRF_COOKIE_SECURE is False
+
+    # Restore default settings
+    monkeypatch.delenv("SESSION_COOKIE_SECURE", raising=False)
+    monkeypatch.delenv("CSRF_COOKIE_SECURE", raising=False)
+    importlib.reload(config.settings)
+
 
 
 

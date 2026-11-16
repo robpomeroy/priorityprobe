@@ -23,29 +23,38 @@ class SSRFSafeTransport(httpx.HTTPTransport):
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         from accounts.forms import is_safe_ollama_endpoint
-        host = (request.url.host or "").strip().lower()
+        original_host = (request.url.host or "").strip().lower()
         port = request.url.port or (443 if request.url.scheme == "https" else 80)
 
-        if not host:
+        if not original_host:
             raise ValueError("Invalid request: host is empty.")
 
-        if host in ("169.254.169.254", "metadata.google.internal"):
-            raise ValueError(f"Outbound connection blocked: destination {host} is private or restricted.")
+        if original_host in ("169.254.169.254", "metadata.google.internal"):
+            raise ValueError(f"Outbound connection blocked: destination {original_host} is private or restricted.")
 
         # Check explicit hostname allowlist
-        if host in self.allowlist or ("localhost" in self.allowlist and host in ("127.0.0.1", "::1", "0:0:0:0:0:0:0:1")):
-            return super().handle_request(request)
+        is_allowlisted = original_host in self.allowlist or ("localhost" in self.allowlist and original_host in ("127.0.0.1", "::1", "0:0:0:0:0:0:0:1"))
 
         # Resolve host to IP addresses (supports dual-stack IPv4/IPv6)
         try:
-            addr_infos = socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+            addr_infos = socket.getaddrinfo(original_host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
         except Exception as exc:
-            raise ValueError(f"Could not resolve destination host '{host}': {exc}")
+            raise ValueError(f"Could not resolve destination host '{original_host}': {exc}")
 
+        safe_ip = None
         for family, socktype, proto, canonname, sockaddr in addr_infos:
             ip_str = sockaddr[0]
-            if ip_str in ("169.254.169.254", "metadata.google.internal") or not is_safe_ollama_endpoint(ip_str):
+            if ip_str in ("169.254.169.254", "metadata.google.internal") or (not is_allowlisted and not is_safe_ollama_endpoint(ip_str)):
                 raise ValueError(f"Outbound connection blocked: destination {ip_str} is private or restricted.")
+            if safe_ip is None:
+                safe_ip = ip_str
+
+        # Pin validated IP address on request to eliminate TOCTOU DNS rebinding
+        if safe_ip:
+            request.headers["Host"] = original_host
+            if request.url.scheme == "https":
+                request.extensions["sni_hostname"] = original_host
+            request.url = request.url.copy_with(host=safe_ip)
 
         return super().handle_request(request)
 
@@ -193,20 +202,30 @@ def generate_reflection(
     if resolved_api_base:
         kwargs["api_base"] = resolved_api_base
 
+    http_client = None
+    original_client_session = getattr(litellm, "client_session", None)
     try:
         if provider in ("ollama", "custom"):
             allowlist = getattr(settings, "OLLAMA_ALLOWED_HOSTS", None) or []
             transport = SSRFSafeTransport(allowlist=allowlist)
             http_client = httpx.Client(transport=transport, follow_redirects=False, timeout=timeout)
-            client = openai.OpenAI(
-                base_url=resolved_api_base,
-                api_key=api_key or "sk-dummy",
-                http_client=http_client,
-            )
-            kwargs["client"] = client
+            litellm.client_session = http_client
+
+            if provider == "custom":
+                kwargs["client"] = openai.OpenAI(
+                    base_url=resolved_api_base,
+                    api_key=api_key or "sk-dummy",
+                    http_client=http_client,
+                )
+            elif provider == "ollama":
+                kwargs["client"] = http_client
 
         response = litellm.completion(**kwargs)
         content = response.choices[0].message.content
         return True, content
     except Exception as exc:
         return False, f"LLM Connection Error: {str(exc)}"
+    finally:
+        litellm.client_session = original_client_session
+        if http_client is not None:
+            http_client.close()
