@@ -121,6 +121,13 @@ When deploying new code or database migrations:
 ansible-playbook -i inventory.ini deploy.yml
 ```
 
+### Readiness Probe & Health Check Configuration
+During deployment, `deploy.yml` runs a readiness check verifying application health before concluding. By default, the probe queries `http://127.0.0.1:8000/accounts/login/` (matching the `gunicorn_bind` setting).
+
+Because Django validates the incoming HTTP `Host` header against `ALLOWED_HOSTS`, the readiness probe host must be permitted:
+- **Default Probe URL:** Ensure `127.0.0.1` is included in `allowed_hosts` in `group_vars/all.yml` (as configured by default in `group_vars/all.example.yml`: `"{{ server_domain }},127.0.0.1,localhost"`).
+- **Custom Probe URL:** If `127.0.0.1` is not included in `allowed_hosts`, define `health_check_url` in `group_vars/all.yml` pointing to a host listed in `allowed_hosts` (e.g. `https://{{ server_domain }}/accounts/login/`).
+
 ---
 
 ## 4. Traditional Server Deployment Reference

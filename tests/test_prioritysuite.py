@@ -1606,6 +1606,68 @@ def test_cookie_secure_settings_env_parsing(monkeypatch):
     importlib.reload(config.settings)
 
 
+def test_user_llm_config_form_retained_api_key_validation(user):
+    from accounts.forms import UserLLMConfigForm
+    from accounts.models import UserLLMConfig
+
+    cfg, _ = UserLLMConfig.objects.get_or_create(user=user)
+    cfg.provider = "ollama"
+    cfg.model_name = "llama3.1"
+    cfg.api_base = "http://remote-ollama.example.com:11434/v1"
+    cfg.api_key = "secret-ollama-key"
+    cfg.save()
+
+    # Case 1: Keeping the same provider and api_base with blank raw_api_key retains the key.
+    # Remote HTTP Ollama with an API key must fail validation.
+    with patch("accounts.forms.is_safe_ollama_endpoint", return_value=True):
+        form = UserLLMConfigForm(
+            data={
+                "provider": "ollama",
+                "model_name": "llama3.1",
+                "api_base": "http://remote-ollama.example.com:11434/v1",
+                "raw_api_key": "",
+                "consent_given": True,
+                "theme_preference": "auto",
+            },
+            instance=cfg,
+        )
+        assert not form.is_valid()
+        assert "api_base" in form.errors
+        assert "Ollama remote API base URL must use HTTPS when an API key is configured" in str(form.errors["api_base"])
+
+    # Case 2: Changing api_base with blank raw_api_key does NOT retain the old key.
+    # Remote HTTP Ollama without an API key is permitted.
+    with patch("accounts.forms.is_safe_ollama_endpoint", return_value=True):
+        form2 = UserLLMConfigForm(
+            data={
+                "provider": "ollama",
+                "model_name": "llama3.1",
+                "api_base": "http://other-remote-ollama.example.com:11434/v1",
+                "raw_api_key": "",
+                "consent_given": True,
+                "theme_preference": "auto",
+            },
+            instance=cfg,
+        )
+        assert form2.is_valid(), form2.errors
+
+    # Case 3: Changing provider with blank raw_api_key does not retain the key
+    with patch("accounts.forms.is_safe_ollama_endpoint", return_value=True):
+        form3 = UserLLMConfigForm(
+            data={
+                "provider": "openai",
+                "model_name": "gpt-4o",
+                "api_base": "https://api.openai.com/v1",
+                "raw_api_key": "",
+                "consent_given": True,
+                "theme_preference": "auto",
+            },
+            instance=cfg,
+        )
+        assert form3.is_valid(), form3.errors
+
+
+
 
 
 

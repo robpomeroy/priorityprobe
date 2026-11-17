@@ -179,10 +179,18 @@ class UserLLMConfigForm(forms.ModelForm):
         provider = cleaned_data.get("provider")
         api_base = cleaned_data.get("api_base")
         raw_api_key = (cleaned_data.get("raw_api_key") or "").strip()
-        has_key = bool(raw_api_key or (self.instance and getattr(self.instance, "api_key", "")))
+
+        effective_key = raw_api_key or None
+        if not effective_key and self.instance and self.instance.pk:
+            old_provider = getattr(self.instance, "provider", "")
+            old_api_base = (getattr(self.instance, "api_base", "") or "").strip()
+            new_api_base = (api_base or "").strip()
+            if old_provider == provider and old_api_base == new_api_base:
+                effective_key = (getattr(self.instance, "api_key", "") or "").strip() or None
+
         if provider:
             try:
-                validate_llm_api_base(provider, api_base or "", api_key=raw_api_key if has_key else None)
+                validate_llm_api_base(provider, api_base or "", api_key=effective_key)
             except ValidationError as e:
                 self.add_error("api_base", e)
         return cleaned_data
