@@ -23,7 +23,7 @@
                         <div class="col-md-6">
                             <label class="form-label small fw-semibold">Model Identifier</label>
                             {{ form.model_name }}
-                            <div class="form-text small">e.g. <code>ollama/llama3.1</code> or <code>openrouter/anthropic/claude-3.5-sonnet</code></div>
+                            <div class="form-text small">e.g. <code>ollama/llama3.1</code>, <code>openrouter/anthropic/claude-3.5-sonnet</code>, <code>gpt-4o</code>, <code>claude-3-5-sonnet-20241022</code>, <code>gemini-2.0-flash</code></div>
                         </div>
 
                         <div class="col-12">
@@ -32,7 +32,7 @@
                             {% if form.api_base.errors %}
                                 <div class="text-danger small mt-1">{{ form.api_base.errors|striptags }}</div>
                             {% endif %}
-                            <div class="form-text small">Default for Ollama: <code>http://localhost:11434</code> | Default for OpenRouter: <code>https://openrouter.ai/api/v1</code></div>
+                            <div class="form-text small">Default for Ollama: <code>http://localhost:11434</code> | Default for OpenRouter: <code>https://openrouter.ai/api/v1</code> | For OpenAI Gateway / LocalAI: <code>http://127.0.0.1:8080/v1</code></div>
                         </div>
 
                         <div class="col-12">
@@ -61,7 +61,10 @@
                     </div>
 
                     <div class="mt-4 d-flex justify-content-between align-items-center">
-                        <button type="submit" class="btn btn-primary bg-terracotta">Save Settings</button>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary bg-terracotta">Save Settings</button>
+                            <button type="submit" formaction="{% url 'accounts:test_llm' %}" class="btn btn-outline-sage">Test Connection</button>
+                        </div>
                         <a href="{% url 'accounts:delete_account' %}" class="btn btn-outline-danger btn-sm">Delete Account & Data</a>
                     </div>
                 </form>

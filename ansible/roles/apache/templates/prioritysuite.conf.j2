@@ -1,0 +1,76 @@
+# Apache VirtualHost Configuration for PrioritySuite (Managed by Ansible)
+# Supports Oracle Linux 9 / RHEL 9 with mod_ssl and mod_proxy
+
+{% if enable_ssl %}
+<VirtualHost *:80>
+    ServerName {{ server_domain }}
+    ServerAdmin {{ server_admin_email }}
+
+    # Redirect all plaintext HTTP traffic to HTTPS securely using configured domain
+    RewriteEngine On
+    RewriteCond %{HTTPS} off
+    RewriteRule ^(.*)$ https://{{ server_domain }}%{REQUEST_URI} [R=301,L]
+</VirtualHost>
+
+<VirtualHost *:443>
+    ServerName {{ server_domain }}
+    ServerAdmin {{ server_admin_email }}
+
+    # TLS / SSL Configuration
+    SSLEngine on
+    SSLCertificateFile {{ ssl_cert_path }}
+    SSLCertificateKeyFile {{ ssl_key_path }}
+    SSLProtocol all -SSLv3 -TLSv1 -TLSv1.1
+    SSLCipherSuite HIGH:!aNULL:!MD5:!3DES
+    SSLHonorCipherOrder on
+
+    # Forwarded headers so Django recognizes secure TLS termination
+    RequestHeader set X-Forwarded-Proto "https"
+    RequestHeader set X-Forwarded-Port "443"
+
+    # Static files served directly by Apache
+    Alias /static/ {{ app_root }}/staticfiles/
+    <Directory {{ app_root }}/staticfiles>
+        Require all granted
+        Options -Indexes
+    </Directory>
+
+    # Proxy to PrioritySuite Gunicorn application server
+    ProxyPreserveHost On
+    ProxyTimeout {{ proxy_timeout | default(90) }}
+    ProxyPass /static/ !
+    ProxyPass / http://{{ gunicorn_bind }}/
+    ProxyPassReverse / http://{{ gunicorn_bind }}/
+
+    # Custom log format
+    ErrorLog /var/log/httpd/{{ app_name }}_error.log
+    CustomLog /var/log/httpd/{{ app_name }}_access.log combined
+</VirtualHost>
+{% else %}
+{# HTTP-only mode is restricted to local loopback clients for development #}
+<VirtualHost 127.0.0.1:80 [::1]:80>
+    ServerName {{ server_domain }}
+    ServerAdmin {{ server_admin_email }}
+
+    <Location />
+        Require local
+    </Location>
+
+    RequestHeader set X-Forwarded-Proto "http"
+
+    Alias /static/ {{ app_root }}/staticfiles/
+    <Directory {{ app_root }}/staticfiles>
+        Require local
+        Options -Indexes
+    </Directory>
+
+    ProxyPreserveHost On
+    ProxyTimeout {{ proxy_timeout | default(90) }}
+    ProxyPass /static/ !
+    ProxyPass / http://{{ gunicorn_bind }}/
+    ProxyPassReverse / http://{{ gunicorn_bind }}/
+
+    ErrorLog /var/log/httpd/{{ app_name }}_error.log
+    CustomLog /var/log/httpd/{{ app_name }}_access.log combined
+</VirtualHost>
+{% endif %}

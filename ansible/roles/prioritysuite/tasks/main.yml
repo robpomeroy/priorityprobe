@@ -1,0 +1,80 @@
+---
+- name: Validate that deployment credentials and secrets are not default placeholders
+  ansible.builtin.assert:
+    that:
+      - django_secret_key != "generate-a-secure-random-50-character-secret-key-here"
+      - db_password != "change_this_to_a_secure_database_password"
+      - django_secret_key | length >= 32
+    fail_msg: "Production deployment rejected: django_secret_key and db_password must be changed from the example placeholder values."
+
+- name: Ensure application root directory exists with proper ownership
+  ansible.builtin.file:
+    path: "{{ app_root }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: "0755"
+
+- name: Clone PrioritySuite repository
+  ansible.builtin.git:
+    repo: "{{ app_repo }}"
+    dest: "{{ app_root }}"
+    version: "{{ app_version }}"
+    force: true
+  become_user: "{{ app_user }}"
+
+- name: Create Python virtual environment and install requirements
+  ansible.builtin.pip:
+    requirements: "{{ app_root }}/requirements.txt"
+    virtualenv: "{{ app_root }}/.venv"
+    virtualenv_command: "{{ python_executable | default('/usr/bin/python3.11') }} -m venv"
+    extra_args: "--upgrade"
+  become_user: "{{ app_user }}"
+
+- name: Install database driver package
+  ansible.builtin.pip:
+    name:
+      - mysqlclient
+    virtualenv: "{{ app_root }}/.venv"
+  become_user: "{{ app_user }}"
+
+- name: Deploy .env configuration file
+  ansible.builtin.template:
+    src: prioritysuite.env.j2
+    dest: "{{ app_root }}/.env"
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: "0600"
+  notify: Restart PrioritySuite
+
+- name: Run Django database migrations
+  ansible.builtin.command:
+    cmd: "{{ app_root }}/.venv/bin/python manage.py migrate --no-input"
+    chdir: "{{ app_root }}"
+  become_user: "{{ app_user }}"
+  environment:
+    DJANGO_SETTINGS_MODULE: "config.settings"
+
+- name: Collect static files
+  ansible.builtin.command:
+    cmd: "{{ app_root }}/.venv/bin/python manage.py collectstatic --no-input"
+    chdir: "{{ app_root }}"
+  become_user: "{{ app_user }}"
+  environment:
+    DJANGO_SETTINGS_MODULE: "config.settings"
+
+- name: Deploy systemd service unit for Gunicorn
+  ansible.builtin.template:
+    src: prioritysuite.service.j2
+    dest: "/etc/systemd/system/{{ app_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart PrioritySuite
+
+- name: Enable and start PrioritySuite service
+  ansible.builtin.systemd:
+    name: "{{ app_name }}"
+    state: started
+    enabled: true
+    daemon_reload: true

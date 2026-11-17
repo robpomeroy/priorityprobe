@@ -1,0 +1,70 @@
+---
+- name: Rolling Application Update for PrioritySuite
+  hosts: prioritysuite_servers
+  become: true
+  gather_facts: false
+  serial: 1
+
+  tasks:
+    - name: Pull latest code from repository
+      ansible.builtin.git:
+        repo: "{{ app_repo }}"
+        dest: "{{ app_root }}"
+        version: "{{ app_version }}"
+        force: true
+      become_user: "{{ app_user }}"
+
+    - name: Install and update Python virtualenv requirements
+      ansible.builtin.pip:
+        requirements: "{{ app_root }}/requirements.txt"
+        virtualenv: "{{ app_root }}/.venv"
+        virtualenv_command: "{{ python_executable | default('/usr/bin/python3.11') }} -m venv"
+      become_user: "{{ app_user }}"
+
+    - name: Install database driver package
+      ansible.builtin.pip:
+        name:
+          - mysqlclient
+        virtualenv: "{{ app_root }}/.venv"
+      become_user: "{{ app_user }}"
+
+    # Note: Zero-downtime rolling deployments require backward-compatible schema migrations
+    # (expand-and-contract pattern) so that existing Gunicorn workers continue functioning
+    # while migrations run. For breaking migrations, stop Gunicorn prior to migrate.
+    - name: Run database schema migrations
+      ansible.builtin.command:
+        cmd: "{{ app_root }}/.venv/bin/python manage.py migrate --no-input"
+        chdir: "{{ app_root }}"
+      become_user: "{{ app_user }}"
+      environment:
+        DJANGO_SETTINGS_MODULE: "config.settings"
+
+    - name: Collect static files
+      ansible.builtin.command:
+        cmd: "{{ app_root }}/.venv/bin/python manage.py collectstatic --no-input"
+        chdir: "{{ app_root }}"
+      become_user: "{{ app_user }}"
+      environment:
+        DJANGO_SETTINGS_MODULE: "config.settings"
+
+    - name: Restore SELinux file contexts on staticfiles directory
+      ansible.builtin.command:
+        cmd: "restorecon -R {{ app_root }}/staticfiles"
+      changed_when: false
+
+    - name: Restart PrioritySuite Gunicorn service
+      ansible.builtin.systemd:
+        name: "{{ app_name }}"
+        state: restarted
+        daemon_reload: true
+
+    - name: Verify application service health and readiness before proceeding
+      ansible.builtin.uri:
+        url: "{{ health_check_url | default('http://' ~ (gunicorn_bind | default('127.0.0.1:8000') | regex_replace('^0[.]0[.]0[.]0', '127.0.0.1')) ~ '/accounts/login/') }}"
+        status_code: 200
+        timeout: 10
+      register: health_check
+      until: health_check.status == 200
+      retries: 5
+      delay: 2
+      when: not (gunicorn_bind | default('127.0.0.1:8000')).startswith('unix:') or health_check_url is defined

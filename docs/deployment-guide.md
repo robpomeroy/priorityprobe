@@ -88,7 +88,49 @@ For hosted, multi-user deployments, the repository includes a complete `docker-c
 
 ---
 
-## 3. Traditional Server Deployment (Pre-Ansible Reference)
+## 3. Automated Provisioning with Ansible (Oracle Linux / RHEL 9 + Apache)
+
+For production deployments on RHEL-family distributions (such as **Oracle Linux 9**, **AlmaLinux 9**, or **Rocky Linux 9**), automated Ansible playbooks are located in `ansible/`:
+
+### Prerequisites on Control Machine
+```bash
+pip install ansible
+ansible-galaxy collection install ansible.posix community.general community.mysql
+```
+
+### Full Provisioning & Deployment
+```bash
+cd ansible
+cp inventory.example.ini inventory.ini
+cp group_vars/all.example.yml group_vars/all.yml
+
+# Edit inventory.ini and group_vars/all.yml with your server details and passwords
+ansible-playbook -i inventory.ini site.yml
+```
+
+This provisions:
+- **Apache (`httpd`)** with `mod_ssl` and `mod_proxy` acting as the reverse proxy (with SELinux `httpd_can_network_connect` enabled).
+- **Gunicorn** managed by `systemd`.
+- **MariaDB** configured with database, user, and security hardening.
+- **Firewalld** configured for HTTP (80) and HTTPS (443).
+- **TLS configuration:** Verifies operator-supplied TLS certificates in production (with optional self-signed generation for development/evaluation environments). For automated certificate issuance and renewals on production servers, Certbot / ACME is recommended.
+
+### Fast Application Updates
+When deploying new code or database migrations:
+```bash
+ansible-playbook -i inventory.ini deploy.yml
+```
+
+### Readiness Probe & Health Check Configuration
+During deployment, `deploy.yml` runs a readiness check verifying application health before concluding. By default, the probe queries `http://127.0.0.1:8000/accounts/login/` (matching the `gunicorn_bind` setting). A successful HTTP 200 response confirms that Gunicorn is running and Django is successfully routing and serving requests, though it does not verify database connectivity or successful user authentication.
+
+Because Django validates the incoming HTTP `Host` header against `ALLOWED_HOSTS`, the readiness probe host must be permitted:
+- **Default Probe URL:** Ensure `127.0.0.1` is included in `allowed_hosts` in `group_vars/all.yml` (as configured by default in `group_vars/all.example.yml`: `"{{ server_domain }},127.0.0.1,localhost"`). Note that for existing deployments, modifying `group_vars/all.yml` alone is insufficient; operators must apply the configuration with `site.yml` so that `.env` reflects the updated `ALLOWED_HOSTS` before running `deploy.yml`.
+- **Custom Probe URL:** If `127.0.0.1` is omitted from `allowed_hosts`, define `health_check_url` in `group_vars/all.yml` targeting an allowed host. Because the readiness probe runs directly on the host being updated, the URL must reach that specific host rather than routing through a shared load balancer that might reach another node. Operators should use a host-specific address or a name that resolves directly to the target host (e.g. `https://{{ server_domain }}/accounts/login/`, provided `server_domain` resolves to the local target host).
+
+---
+
+## 4. Traditional Server Deployment Reference
 
 If deploying to a dedicated Linux server (Ubuntu 22.04/24.04 or AlmaLinux 9/RHEL 9) without Docker:
 

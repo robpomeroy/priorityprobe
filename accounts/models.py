@@ -6,6 +6,10 @@ class UserLLMConfig(models.Model):
     PROVIDER_CHOICES = [
         ("ollama", "Ollama (Local / Self-hosted)"),
         ("openrouter", "OpenRouter (Cloud Router)"),
+        ("openai", "OpenAI (Direct API)"),
+        ("anthropic", "Anthropic Claude (Direct API)"),
+        ("gemini", "Google Gemini (Direct API)"),
+        ("custom", "OpenAI-Compatible Gateway (Custom Endpoint)"),
         ("none", "None / Offline"),
     ]
 

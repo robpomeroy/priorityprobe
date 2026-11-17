@@ -1,0 +1,11 @@
+---
+- name: Provision and Deploy PrioritySuite on Oracle Linux / RHEL 9
+  hosts: prioritysuite_servers
+  become: true
+  gather_facts: true
+
+  roles:
+    - common
+    - mariadb
+    - prioritysuite
+    - apache

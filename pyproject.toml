@@ -29,8 +29,9 @@ prod = [
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings"
+testpaths = ["tests"]
+norecursedirs = [".venv", "venv", ".git", "ansible"]
 python_files = ["tests.py", "test_*.py", "*_tests.py"]
-django_db_bench = false
 addopts = "-p no:cacheprovider"
 
 [tool.coverage.run]
