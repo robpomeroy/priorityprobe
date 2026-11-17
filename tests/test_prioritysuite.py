@@ -1651,13 +1651,23 @@ def test_user_llm_config_form_retained_api_key_validation(user):
         )
         assert form2.is_valid(), form2.errors
 
-    # Case 3: Changing provider with blank raw_api_key does not retain the key
+    # Case 3: Changing provider with blank raw_api_key does not retain the saved key across providers.
+    # Start with provider "none", a saved key, and a remote HTTP Ollama base.
+    cfg.provider = "none"
+    cfg.model_name = "none"
+    cfg.api_base = "http://remote-ollama.example.com:11434/v1"
+    cfg.api_key = "secret-ollama-key"
+    cfg.save()
+
+    # Submitting provider "ollama" with the same remote HTTP base and a blank raw_api_key must be valid,
+    # ensuring clean does not reuse the saved key across different providers (which would fail validation
+    # because remote HTTP Ollama with an API key is prohibited).
     with patch("accounts.forms.is_safe_ollama_endpoint", return_value=True):
         form3 = UserLLMConfigForm(
             data={
-                "provider": "openai",
-                "model_name": "gpt-4o",
-                "api_base": "https://api.openai.com/v1",
+                "provider": "ollama",
+                "model_name": "llama3.1",
+                "api_base": "http://remote-ollama.example.com:11434/v1",
                 "raw_api_key": "",
                 "consent_given": True,
                 "theme_preference": "auto",

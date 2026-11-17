@@ -122,11 +122,11 @@ ansible-playbook -i inventory.ini deploy.yml
 ```
 
 ### Readiness Probe & Health Check Configuration
-During deployment, `deploy.yml` runs a readiness check verifying application health before concluding. By default, the probe queries `http://127.0.0.1:8000/accounts/login/` (matching the `gunicorn_bind` setting).
+During deployment, `deploy.yml` runs a readiness check verifying application health before concluding. By default, the probe queries `http://127.0.0.1:8000/accounts/login/` (matching the `gunicorn_bind` setting). A successful HTTP 200 response confirms that Gunicorn is running and Django is successfully routing and serving requests, though it does not verify database connectivity or successful user authentication.
 
 Because Django validates the incoming HTTP `Host` header against `ALLOWED_HOSTS`, the readiness probe host must be permitted:
-- **Default Probe URL:** Ensure `127.0.0.1` is included in `allowed_hosts` in `group_vars/all.yml` (as configured by default in `group_vars/all.example.yml`: `"{{ server_domain }},127.0.0.1,localhost"`).
-- **Custom Probe URL:** If `127.0.0.1` is not included in `allowed_hosts`, define `health_check_url` in `group_vars/all.yml` pointing to a host listed in `allowed_hosts` (e.g. `https://{{ server_domain }}/accounts/login/`).
+- **Default Probe URL:** Ensure `127.0.0.1` is included in `allowed_hosts` in `group_vars/all.yml` (as configured by default in `group_vars/all.example.yml`: `"{{ server_domain }},127.0.0.1,localhost"`). Note that for existing deployments, modifying `group_vars/all.yml` alone is insufficient; operators must apply the configuration with `site.yml` so that `.env` reflects the updated `ALLOWED_HOSTS` before running `deploy.yml`.
+- **Custom Probe URL:** If `127.0.0.1` is omitted from `allowed_hosts`, define `health_check_url` in `group_vars/all.yml` targeting an allowed host. Because the readiness probe runs directly on the host being updated, the URL must reach that specific host rather than routing through a shared load balancer that might reach another node. Operators should use a host-specific address or a name that resolves directly to the target host (e.g. `https://{{ server_domain }}/accounts/login/`, provided `server_domain` resolves to the local target host).
 
 ---
 
