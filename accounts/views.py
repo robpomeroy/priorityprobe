@@ -118,6 +118,7 @@ def test_llm_connection_view(request):
         model_name=model_name,
         api_key=api_key,
         api_base=api_base,
+        timeout=10,
     )
     if success:
         messages.success(request, f"Connection verified successfully! ({provider}: {model_name})")
@@ -141,6 +142,8 @@ def test_llm_connection_view(request):
         if api_base and sanitized_base != "[invalid-url]":
             try:
                 parsed_base = urlparse(api_base)
+                if parsed_base.username and parsed_base.username in sanitized_resp:
+                    sanitized_resp = sanitized_resp.replace(parsed_base.username, "[REDACTED]")
                 if parsed_base.password and parsed_base.password in sanitized_resp:
                     sanitized_resp = sanitized_resp.replace(parsed_base.password, "[REDACTED]")
             except ValueError:

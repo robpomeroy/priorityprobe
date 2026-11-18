@@ -28,7 +28,6 @@
     requirements: "{{ app_root }}/requirements.txt"
     virtualenv: "{{ app_root }}/.venv"
     virtualenv_command: "{{ python_executable | default('/usr/bin/python3.12') }} -m venv"
-    extra_args: "--upgrade"
   become_user: "{{ app_user }}"
 
 - name: Install database driver package

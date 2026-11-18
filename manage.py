@@ -1,20 +1,8 @@
 #!/usr/bin/env python
 """Django's command-line utility for administrative tasks."""
 
-import ctypes
 import os
 import sys
-
-for _candidate in (
-    "/usr/local/aws-cli/v2/2.27.11/dist/libsqlite3.so.0",
-    "/usr/local/aws-cli/v2/current/dist/libsqlite3.so.0",
-):
-    if os.path.exists(_candidate):
-        try:
-            ctypes.CDLL(_candidate, mode=ctypes.RTLD_GLOBAL)
-            break
-        except OSError:
-            pass
 
 
 def main():

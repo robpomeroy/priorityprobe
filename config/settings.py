@@ -1,5 +1,4 @@
 import os
-import tempfile
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -103,8 +102,9 @@ else:
     sqlite_env_path = os.environ.get("SQLITE_PATH", "")
     if not sqlite_env_path:
         if str(BASE_DIR).startswith("\\\\"):
-            temp_dir = Path(tempfile.gettempdir())
-            sqlite_db_path = temp_dir / "prioritysuite_dev.sqlite3"
+            user_data_dir = Path.home() / ".local" / "share" / "prioritysuite"
+            user_data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            sqlite_db_path = user_data_dir / "prioritysuite_dev.sqlite3"
         else:
             sqlite_db_path = default_sqlite_path
     else:

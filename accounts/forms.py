@@ -10,19 +10,38 @@ from django.core.exceptions import ValidationError
 
 from accounts.models import UserLLMConfig
 
-ALLOWED_PROVIDERS = {"ollama", "openrouter", "openai", "anthropic", "gemini", "custom", "none"}
+CLOUD_METADATA_HOSTS = {
+    "169.254.169.254",
+    "169.254.170.2",
+    "fd00:ec2::254",
+    "100.100.100.200",
+    "metadata.google.internal",
+}
+
+CLOUD_METADATA_IPS = {
+    ipaddress.ip_address("169.254.169.254"),
+    ipaddress.ip_address("169.254.170.2"),
+    ipaddress.ip_address("fd00:ec2::254"),
+    ipaddress.ip_address("100.100.100.200"),
+}
+
+
+def is_restricted_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    if hasattr(ip, "ipv4_mapped") and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    if ip.is_unspecified or ip.is_multicast or ip.is_link_local or ip.is_reserved:
+        return True
+    return ip in CLOUD_METADATA_IPS
 
 
 def _is_ip_address_safe(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     if hasattr(ip, "ipv4_mapped") and ip.ipv4_mapped:
         ip = ip.ipv4_mapped
-    if ip.is_unspecified:
+    if is_restricted_ip(ip):
         return False
     if ip.is_loopback:
         return bool(getattr(settings, "DEBUG", False))
-    return not (
-        not ip.is_global or ip.is_private or ip.is_link_local or ip.is_reserved or ip.is_multicast
-    )
+    return not (not ip.is_global or ip.is_private)
 
 
 def is_safe_ollama_endpoint(hostname: str) -> bool:
@@ -31,13 +50,32 @@ def is_safe_ollama_endpoint(hostname: str) -> bool:
     Private/internal network ranges or cloud metadata are prohibited unless explicitly allowlisted.
     In hosted production deployments, loopback/private destinations are blocked unless
     specifically configured in settings.OLLAMA_ALLOWED_HOSTS.
+    Restricted metadata/link-local/multicast destinations are blocked unconditionally.
     """
     target_host = hostname.strip().lower()
+    if target_host in CLOUD_METADATA_HOSTS:
+        return False
+
     allowlist = getattr(settings, "OLLAMA_ALLOWED_HOSTS", None)
     if allowlist is not None:
         normalized_allowlist = {h.strip().lower() for h in allowlist if h.strip()}
         if target_host in normalized_allowlist:
-            return True
+            try:
+                ip = ipaddress.ip_address(target_host)
+                return not is_restricted_ip(ip)
+            except ValueError:
+                # Hostname allowlisted: verify resolved IPs are not restricted metadata
+                try:
+                    addr_infos = socket.getaddrinfo(target_host, None, socket.AF_UNSPEC)
+                    if not addr_infos:
+                        return False
+                    for _, _, _, _, sockaddr in addr_infos:
+                        resolved_ip = ipaddress.ip_address(sockaddr[0])
+                        if is_restricted_ip(resolved_ip):
+                            return False
+                    return True
+                except (socket.gaierror, ValueError, OSError):
+                    return False
         if "localhost" in normalized_allowlist and target_host in (
             "127.0.0.1",
             "::1",
@@ -63,7 +101,7 @@ def is_safe_ollama_endpoint(hostname: str) -> bool:
             addr_infos = socket.getaddrinfo(target_host, None, socket.AF_UNSPEC)
             if not addr_infos:
                 return False
-            for family, socktype, proto, canonname, sockaddr in addr_infos:
+            for _, _, _, _, sockaddr in addr_infos:
                 addr_str = sockaddr[0]
                 resolved_ip = ipaddress.ip_address(addr_str)
                 if not _is_ip_address_safe(resolved_ip):
@@ -95,7 +133,7 @@ def validate_llm_api_base(provider: str, api_base: str, api_key: str | None = No
     if not hostname:
         raise ValidationError("Invalid API Base hostname.")
 
-    if hostname in ("169.254.169.254", "metadata.google.internal"):
+    if hostname in CLOUD_METADATA_HOSTS:
         raise ValidationError("Access to cloud metadata endpoints is prohibited.")
 
     if provider == "openrouter":
@@ -237,6 +275,9 @@ class UserLLMConfigForm(forms.ModelForm):
             new_api_base = (api_base or "").strip()
             if old_provider == provider and old_api_base == new_api_base:
                 effective_key = (getattr(self.instance, "api_key", "") or "").strip() or None
+
+        if provider in {"openrouter", "openai", "anthropic", "gemini"} and not effective_key:
+            self.add_error("raw_api_key", "An API key is required for the selected LLM provider.")
 
         if provider:
             try:

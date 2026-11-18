@@ -7,8 +7,7 @@ def seed_sample_framework(user) -> Framework:
         owner=user,
         name="Sample Life & Priorities Framework",
         description=(
-            "Illustrative starter framework demonstrating Domains, Whys, "
-            "Objectives, and Goals."
+            "Illustrative starter framework demonstrating Domains, Whys, Objectives, and Goals."
         ),
         is_sample=True,
     )
@@ -18,8 +17,7 @@ def seed_sample_framework(user) -> Framework:
         framework=framework,
         name="Family and Home",
         description=(
-            "Broad sphere covering domestic stability, relationships, "
-            "and caring responsibilities."
+            "Broad sphere covering domestic stability, relationships, and caring responsibilities."
         ),
         display_order=1,
         is_sample=True,

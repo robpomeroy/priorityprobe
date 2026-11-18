@@ -20,6 +20,7 @@
       - python3.12-devel
       - gcc
       - mariadb-devel
+      - pkgconf-pkg-config
       - firewalld
       - policycoreutils-python-utils
       - setroubleshoot-server

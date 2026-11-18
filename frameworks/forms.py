@@ -1,27 +1,6 @@
 from django import forms
 
-from frameworks.models import Domain, Framework, Goal, Objective, Why
-
-
-class FrameworkForm(forms.ModelForm):
-    class Meta:
-        model = Framework
-        fields = ("name", "description")
-        widgets = {
-            "name": forms.TextInput(
-                attrs={
-                    "class": "form-control",
-                    "placeholder": "e.g. Personal Priorities Framework",
-                }
-            ),
-            "description": forms.Textarea(
-                attrs={
-                    "class": "form-control",
-                    "rows": 3,
-                    "placeholder": "Optional description or context...",
-                }
-            ),
-        }
+from frameworks.models import Domain, Goal, Objective, Why
 
 
 class DomainForm(forms.ModelForm):

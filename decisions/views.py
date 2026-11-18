@@ -205,9 +205,17 @@ def decision_compare_view(request, framework_id=None):
     comparison_reflection = None
     reflections_dict = request.session.get("comparison_reflections")
     if isinstance(reflections_dict, dict) and comp_key in reflections_dict:
-        comparison_reflection = reflections_dict.pop(comp_key)
+        stored_val = reflections_dict.pop(comp_key)
         request.session["comparison_reflections"] = reflections_dict
         request.session.modified = True
+        if isinstance(stored_val, int):
+            comparison_reflection = (
+                LLMReflectionLog.objects.filter(id=stored_val, framework=framework)
+                .values_list("llm_response", flat=True)
+                .first()
+            )
+        else:
+            comparison_reflection = stored_val
     elif "comparison_reflection" in request.session:
         # Fallback for direct session assignment or backward compatibility
         comparison_reflection = request.session.pop("comparison_reflection")
@@ -307,7 +315,7 @@ def decision_compare_view(request, framework_id=None):
                 api_base=llm_config.api_base,
             )
             if success:
-                LLMReflectionLog.objects.create(
+                reflection_log = LLMReflectionLog.objects.create(
                     framework=framework,
                     user_prompt=user_prompt,
                     context_snapshot=comp_md,
@@ -319,7 +327,9 @@ def decision_compare_view(request, framework_id=None):
                 reflections_dict = request.session.get("comparison_reflections", {})
                 if not isinstance(reflections_dict, dict):
                     reflections_dict = {}
-                reflections_dict[comp_key] = response_text
+                while len(reflections_dict) >= 5:
+                    reflections_dict.pop(next(iter(reflections_dict)), None)
+                reflections_dict[comp_key] = reflection_log.id
                 request.session["comparison_reflections"] = reflections_dict
                 request.session.modified = True
                 messages.success(request, "Thinking partner reflection generated.")

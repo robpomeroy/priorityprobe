@@ -23,7 +23,9 @@ class UserLLMConfig(models.Model):
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="llm_config")
     provider = models.CharField(max_length=50, choices=PROVIDER_CHOICES, default="ollama")
-    _encrypted_api_key = models.TextField(db_column="encrypted_api_key", blank=True, default="")
+    _encrypted_api_key = models.TextField(
+        db_column="encrypted_api_key", blank=True, default="", editable=False
+    )
     model_name = models.CharField(
         max_length=120,
         default="ollama/llama3.1",

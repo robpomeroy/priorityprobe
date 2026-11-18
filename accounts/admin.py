@@ -16,6 +16,7 @@ class UserLLMConfigAdmin(admin.ModelAdmin):
     list_filter = ("provider", "consent_given", "theme_preference")
     search_fields = ("user__username", "user__email", "model_name")
     readonly_fields = ("created_at", "updated_at")
+    exclude = ("_encrypted_api_key",)
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)

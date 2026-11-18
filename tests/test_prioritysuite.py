@@ -1,4 +1,5 @@
 import os
+from typing import Any, cast
 
 os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 
@@ -525,6 +526,7 @@ def test_decision_views_edge_cases(client, user, framework, domain, why, objecti
     cfg.provider = "openrouter"
     cfg.model_name = "openrouter/anthropic/claude-3.5-sonnet"
     cfg.api_base = "https://openrouter.ai/api/v1"
+    cfg.api_key = "sk-or-test-key"
     cfg.save()
 
     with patch("litellm.completion") as mock_comp:
@@ -654,11 +656,17 @@ def test_admin_queryset_filtering(user, other_user, framework, domain, why, obje
     from frameworks.admin import (
         DomainAdmin,
         FrameworkAdmin,
+        GoalAdmin,
+        ObjectiveAdmin,
+        WhyAdmin,
     )
 
     site = AdminSite()
     f_admin = FrameworkAdmin(Framework, site)
     d_admin = DomainAdmin(Domain, site)
+    w_admin = WhyAdmin(Why, site)
+    o_admin = ObjectiveAdmin(Objective, site)
+    g_admin = GoalAdmin(Goal, site)
     dec_admin = DecisionRecordAdmin(DecisionRecord, site)
     llm_admin = UserLLMConfigAdmin(UserLLMConfig, site)
 
@@ -670,13 +678,89 @@ def test_admin_queryset_filtering(user, other_user, framework, domain, why, obje
     request.user = other_user
     assert f_admin.get_queryset(request).count() == 0
     assert d_admin.get_queryset(request).count() == 0
+    assert w_admin.get_queryset(request).count() == 0
+    assert o_admin.get_queryset(request).count() == 0
+    assert g_admin.get_queryset(request).count() == 0
     assert dec_admin.get_queryset(request).count() == 0
     assert llm_admin.get_queryset(request).count() == 0
+
+    # User's own staff request
+    user_req = MagicMock()
+    user_req.user = user
+    user_req.user.is_superuser = False
+    assert w_admin.get_queryset(user_req).count() >= 1
+    assert o_admin.get_queryset(user_req).count() >= 1
+    assert g_admin.get_queryset(user_req).count() >= 1
+
+    # Permissions on UserOwnedAdmin (Why, Objective, Goal) and UserLLMConfigAdmin
+    cfg, _ = UserLLMConfig.objects.get_or_create(user=user)
+    with patch.object(User, "has_perm", return_value=True):
+        assert w_admin.has_change_permission(user_req, why) is True
+        assert w_admin.has_delete_permission(user_req, why) is True
+        assert w_admin.has_change_permission(request, why) is False
+        assert w_admin.has_delete_permission(request, why) is False
+
+        assert o_admin.has_change_permission(user_req, objective) is True
+        assert o_admin.has_delete_permission(user_req, objective) is True
+        assert o_admin.has_change_permission(request, objective) is False
+        assert o_admin.has_delete_permission(request, objective) is False
+
+        assert g_admin.has_change_permission(user_req, goal) is True
+        assert g_admin.has_delete_permission(user_req, goal) is True
+        assert g_admin.has_change_permission(request, goal) is False
+        assert g_admin.has_delete_permission(request, goal) is False
+
+        assert llm_admin.has_change_permission(user_req, cfg) is True
+        assert llm_admin.has_delete_permission(user_req, cfg) is True
+        assert llm_admin.has_change_permission(request, cfg) is False
+        assert llm_admin.has_delete_permission(request, cfg) is False
+
+        u_field = llm_admin.formfield_for_foreignkey(
+            UserLLMConfig._meta.get_field("user"), user_req
+        )
+        assert u_field.queryset.count() == 1
+        llm_admin.save_model(user_req, cfg, None, False)
+        assert cfg.user == user
+        assert llm_admin.has_add_permission(user_req) is False
 
     # Foreign key and M2M formfield scoping for regular staff
     fw_field = d_admin.formfield_for_foreignkey(Domain._meta.get_field("framework"), request)
     assert fw_field.queryset.filter(owner=other_user).count() == 0
     assert fw_field.queryset.filter(owner=user).count() == 0
+
+    w_field = w_admin.formfield_for_foreignkey(Why._meta.get_field("domain"), user_req)
+    assert w_field.queryset.filter(framework__owner=user).count() >= 1
+
+    o_field = o_admin.formfield_for_foreignkey(
+        Objective._meta.get_field("primary_domain"), user_req
+    )
+    assert o_field.queryset.filter(framework__owner=user).count() >= 1
+
+    o_whys = o_admin.formfield_for_manytomany(Objective._meta.get_field("whys"), user_req)
+    assert o_whys.queryset.filter(domain__framework__owner=user).count() >= 1
+
+    o_domains = o_admin.formfield_for_manytomany(
+        Objective._meta.get_field("related_domains"), user_req
+    )
+    assert o_domains.queryset.filter(framework__owner=user).count() >= 1
+
+    g_field = g_admin.formfield_for_foreignkey(Goal._meta.get_field("primary_domain"), user_req)
+    assert g_field.queryset.filter(framework__owner=user).count() >= 1
+
+    g_objs = g_admin.formfield_for_manytomany(Goal._meta.get_field("objectives"), user_req)
+    assert g_objs.queryset.filter(primary_domain__framework__owner=user).count() >= 1
+
+    g_domains = g_admin.formfield_for_manytomany(Goal._meta.get_field("related_domains"), user_req)
+    assert g_domains.queryset.filter(framework__owner=user).count() >= 1
+
+    # FrameworkAdmin save_model and formfield_for_foreignkey
+    new_fw = Framework(name="New Staff FW")
+    f_admin.save_model(user_req, new_fw, None, False)
+    assert new_fw.owner == user
+
+    fw_owner_field = f_admin.formfield_for_foreignkey(Framework._meta.get_field("owner"), user_req)
+    assert fw_owner_field.queryset.count() == 1
+    assert fw_owner_field.queryset.first() == user
 
     dec_fw_field = dec_admin.formfield_for_foreignkey(
         DecisionRecord._meta.get_field("framework"), request
@@ -690,6 +774,9 @@ def test_admin_queryset_filtering(user, other_user, framework, domain, why, obje
     request.user.is_superuser = True
     assert f_admin.get_queryset(request).count() >= 1
     assert d_admin.get_queryset(request).count() >= 1
+    assert w_admin.get_queryset(request).count() >= 1
+    assert o_admin.get_queryset(request).count() >= 1
+    assert g_admin.get_queryset(request).count() >= 1
     assert llm_admin.get_queryset(request).count() >= 1
 
 
@@ -1181,7 +1268,24 @@ def test_llm_test_connection_endpoint(client, user):
         assert mock_test_gen2.call_args[1]["api_key"] == ""
 
     # Settings save clears previous provider's key when provider changes without a new key
-    client.post(
+    with patch("accounts.forms.is_safe_ollama_endpoint", return_value=True):
+        client.post(
+            "/accounts/settings/",
+            {
+                "provider": "custom",
+                "model_name": "custom-model",
+                "api_base": "https://custom-gateway.example.com/v1",
+                "consent_given": "on",
+                "theme_preference": "auto",
+                "raw_api_key": "",
+            },
+        )
+    config.refresh_from_db()
+    assert config.provider == "custom"
+    assert config.api_key == ""
+
+    # Switching to cloud provider without key fails validation
+    resp_anthropic = client.post(
         "/accounts/settings/",
         {
             "provider": "anthropic",
@@ -1192,9 +1296,8 @@ def test_llm_test_connection_endpoint(client, user):
             "raw_api_key": "",
         },
     )
-    config.refresh_from_db()
-    assert config.provider == "anthropic"
-    assert config.api_key == ""
+    assert resp_anthropic.status_code == 200
+    assert "An API key is required" in resp_anthropic.content.decode()
 
 
 def test_selective_markdown_export_builder(client, user, framework, domain, objective, goal):
@@ -1393,15 +1496,15 @@ def test_llm_api_base_validation():
         validate_llm_api_base("openrouter", "http://openrouter.ai/api/v1")
 
     # Invalid hostnames for strict cloud providers
-    with pytest.raises(ValidationError, match="OpenAI API Base must point to api.openai.com"):
+    with pytest.raises(ValidationError, match=r"OpenAI API Base must point to api\.openai\.com"):
         validate_llm_api_base("openai", "https://evil-openai.com/v1")
     with pytest.raises(
-        ValidationError, match="Anthropic API Base must point to api.anthropic.com"
+        ValidationError, match=r"Anthropic API Base must point to api\.anthropic\.com"
     ):
         validate_llm_api_base("anthropic", "https://evil-anthropic.com/v1")
     with pytest.raises(ValidationError, match="Google Gemini API Base must point to"):
         validate_llm_api_base("gemini", "https://evil-gemini.com/v1")
-    with pytest.raises(ValidationError, match="OpenRouter API Base must point to openrouter.ai"):
+    with pytest.raises(ValidationError, match=r"OpenRouter API Base must point to openrouter\.ai"):
         validate_llm_api_base("openrouter", "https://evil-openrouter.ai/v1")
 
     # Cloud metadata prohibition
@@ -1502,9 +1605,24 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
             )[0]
             is True
         )
-        assert generate_reflection("ctx", "prompt", "gemini", "gemini-1.5-flash")[0] is True
-        assert generate_reflection("ctx", "prompt", "anthropic", "claude-3-haiku")[0] is True
-        assert generate_reflection("ctx", "prompt", "openai", "gpt-4o")[0] is True
+        assert (
+            generate_reflection(
+                "ctx", "prompt", "gemini", "gemini-1.5-flash", api_key="test-key"
+            )[0]
+            is True
+        )
+        assert (
+            generate_reflection(
+                "ctx", "prompt", "anthropic", "claude-3-haiku", api_key="test-key"
+            )[0]
+            is True
+        )
+        assert (
+            generate_reflection(
+                "ctx", "prompt", "openai", "gpt-4o", api_key="test-key"
+            )[0]
+            is True
+        )
 
         # Custom model containing slashes (e.g. meta-llama/Llama-3-8B-Instruct) gets openai/ prefix
         generate_reflection(
@@ -1561,7 +1679,7 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
     sentinel_session = object()
     import litellm
 
-    litellm.client_session = sentinel_session
+    litellm.client_session = cast(Any, sentinel_session)
     mock_resp = MagicMock()
     mock_resp.choices = [MagicMock(message=MagicMock(content="Ollama reflection"))]
     with (
@@ -1586,7 +1704,8 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
     ):
         ok, err = generate_reflection("ctx", "prompt", "ollama", "llama3")
         assert ok is False
-        assert "API down" in err
+        assert "The LLM endpoint could not be reached" in err
+        assert "API down" not in err
 
     # 4. Decisions Admin coverage
     site = AdminSite()
@@ -1652,17 +1771,15 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
     assert ref_dec_field.queryset.filter(framework__owner=other_user).count() == 0
 
     # 5. SSRFSafeTransport, IP pinning, and redirect prevention
-    import httpx
-
-    from llm.service import SSRFSafeTransport
+    from llm.service import SSRFSafeTransport, httpx
 
     transport = SSRFSafeTransport(allowlist=[])
     with pytest.raises(ValueError, match="Outbound connection blocked"):
-        req = httpx.Request("GET", "http://169.254.169.254/latest/meta-data/")
-        transport.handle_request(req)
+        http_req1 = httpx.Request("GET", "http://169.254.169.254/latest/meta-data/")
+        transport.handle_request(http_req1)
     with pytest.raises(ValueError, match="Outbound connection blocked"):
-        req = httpx.Request("GET", "http://10.0.0.1:8000/v1/chat")
-        transport.handle_request(req)
+        http_req2 = httpx.Request("GET", "http://10.0.0.1:8000/v1/chat")
+        transport.handle_request(http_req2)
     client_test = httpx.Client(transport=transport, follow_redirects=False)
     assert client_test.follow_redirects is False
 
