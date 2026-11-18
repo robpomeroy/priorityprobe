@@ -29,6 +29,8 @@ CLOUD_METADATA_IPS = {
 def is_restricted_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     if hasattr(ip, "ipv4_mapped") and ip.ipv4_mapped:
         ip = ip.ipv4_mapped
+    if ip.is_loopback:
+        return False
     if ip.is_unspecified or ip.is_multicast or ip.is_link_local or ip.is_reserved:
         return True
     return ip in CLOUD_METADATA_IPS

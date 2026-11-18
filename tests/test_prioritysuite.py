@@ -327,6 +327,18 @@ def test_status_update_with_update_fields(client, user, objective, goal):
 
 def test_decisions_workflow(client, user, framework, domain, why, objective):
     client.force_login(user)
+    # List View
+    resp_list = client.get("/decisions/")
+    assert resp_list.status_code == 200
+
+    # Create Decision (GET and invalid POST)
+    resp_create_get = client.get("/decisions/create/")
+    assert resp_create_get.status_code == 200
+
+    resp_create_inv = client.post("/decisions/create/", {"title": ""})
+    assert resp_create_inv.status_code == 200
+    assert "title" in resp_create_inv.context["form"].errors
+
     # Create Decision
     resp = client.post(
         "/decisions/create/",
@@ -350,7 +362,10 @@ def test_decisions_workflow(client, user, framework, domain, why, objective):
     assert resp.status_code == 200
     assert "Promotion Offer" in resp.content.decode()
 
-    # Edit Decision
+    # Edit Decision (GET and valid POST)
+    resp_edit_get = client.get(f"/decisions/{dec.id}/edit/")
+    assert resp_edit_get.status_code == 200
+
     resp = client.post(
         f"/decisions/{dec.id}/edit/",
         {
@@ -364,7 +379,10 @@ def test_decisions_workflow(client, user, framework, domain, why, objective):
     dec.refresh_from_db()
     assert dec.status == DecisionStatus.DECIDED
 
-    # Delete Decision
+    # Delete Decision (GET confirm and POST delete)
+    resp_del_get = client.get(f"/decisions/{dec.id}/delete/")
+    assert resp_del_get.status_code == 200
+
     resp = client.post(f"/decisions/{dec.id}/delete/")
     assert resp.status_code == 302
     assert not DecisionRecord.objects.filter(id=dec.id).exists()
@@ -480,6 +498,40 @@ def test_crypto_custom_key():
         mock_settings.ENCRYPTION_KEY = "custom-key-of-any-arbitrary-length"
         cipher = get_cipher()
         assert cipher is not None
+
+
+def test_crypto_legacy_sha256_backward_compatibility():
+    import base64
+    import hashlib
+
+    from cryptography.fernet import Fernet
+    from django.conf import settings
+
+    from accounts.crypto import decrypt_value
+
+    raw_key = getattr(settings, "ENCRYPTION_KEY", None) or settings.SECRET_KEY
+    legacy_key = base64.urlsafe_b64encode(hashlib.sha256(raw_key.encode("utf-8")).digest())
+    legacy_cipher = Fernet(legacy_key)
+    secret_text = "sk-legacy-test-api-key-12345"
+    legacy_ciphertext = legacy_cipher.encrypt(secret_text.encode("utf-8")).decode("utf-8")
+
+    # MultiFernet must seamlessly decrypt ciphertext created with legacy SHA-256 key
+    decrypted = decrypt_value(legacy_ciphertext)
+    assert decrypted == secret_text
+
+
+def test_ipv6_loopback_not_restricted():
+    import ipaddress
+
+    from accounts.forms import is_restricted_ip
+
+    # RFC 4291 defines ::1 as loopback, but ip.is_reserved is True for 0000::/8.
+    # Our loopback exemption must ensure is_restricted_ip returns False.
+    assert is_restricted_ip(ipaddress.IPv6Address("::1")) is False
+    assert is_restricted_ip(ipaddress.IPv4Address("127.0.0.1")) is False
+    # Link-local / metadata IPs are restricted; public unicast is not
+    assert is_restricted_ip(ipaddress.IPv4Address("169.254.169.254")) is True
+    assert is_restricted_ip(ipaddress.IPv4Address("8.8.8.8")) is False
 
 
 def test_crypto_decrypt_failure():
@@ -1159,6 +1211,42 @@ def test_priority_comparison_view(client, user, framework, domain, objective, go
     assert DecisionRecord.objects.filter(
         framework=framework, supporting_objectives=objective
     ).exists()
+
+    # POST action=reflect with type=goals, parent objectives with whys, and target_date
+    import datetime
+
+    goal.target_date = datetime.date(2026, 12, 31)
+    goal.save()
+    with patch(
+        "decisions.views.generate_reflection", return_value=(True, "Goals comparison reflection")
+    ):
+        resp_reflect_goal = client.post(
+            f"/decisions/compare/{framework.id}/",
+            {
+                "action": "reflect",
+                "type": "goals",
+                "selected": [str(goal.id), str(goal2.id)],
+            },
+        )
+        assert resp_reflect_goal.status_code == 302
+        assert LLMReflectionLog.objects.filter(
+            framework=framework, llm_response="Goals comparison reflection"
+        ).exists()
+
+    # POST action=reflect when reflection generation fails displays error message
+    with patch(
+        "decisions.views.generate_reflection", return_value=(False, "Provider rate limit reached")
+    ):
+        resp_reflect_fail = client.post(
+            f"/decisions/compare/{framework.id}/",
+            {
+                "action": "reflect",
+                "type": "objectives",
+                "selected": [str(objective.id), str(obj2.id)],
+            },
+        )
+        assert resp_reflect_fail.status_code == 200
+        assert "Provider rate limit reached" in resp_reflect_fail.content.decode()
 
 
 def test_llm_test_connection_endpoint(client, user):

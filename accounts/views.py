@@ -123,8 +123,7 @@ def test_llm_connection_view(request):
     if success:
         messages.success(request, f"Connection verified successfully! ({provider}: {model_name})")
     else:
-        # Sanitize api_base and response_text before logging (CWE-532)
-        sanitized_base = api_base
+        sanitized_base = api_base or "[default]"
         if api_base:
             try:
                 parsed_base = urlparse(api_base)
@@ -157,18 +156,5 @@ def test_llm_connection_view(request):
             sanitized_base,
             sanitized_resp,
         )
-        # Preserve policy validation errors while sanitizing stack/connection traces
-        if (
-            response_text.startswith(("Invalid API base URL:", "Outbound connection blocked:"))
-            or "Consent" in response_text
-            or "disabled" in response_text
-            or "unconfigured" in response_text
-        ):
-            display_err = response_text
-        else:
-            display_err = (
-                "The LLM endpoint could not be reached or returned an "
-                "authentication/connectivity error. Check settings and credentials."
-            )
-        messages.error(request, f"Connection failed: {display_err}")
+        messages.error(request, f"Connection failed: {response_text}")
     return redirect("accounts:settings")

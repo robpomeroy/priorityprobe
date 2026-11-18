@@ -25,7 +25,7 @@ run_check() {
     shift 2
 
     echo "======================================================================"
-    echo " [${step_num}/4] Running ${name}..."
+    echo " [${step_num}/5] Running ${name}..."
     echo "======================================================================"
     if "$@"; then
         echo "[✓] ${name} passed."
@@ -39,7 +39,8 @@ run_check() {
 run_check "1" "Ruff (Linting & Style)" "${VENV_BIN}/ruff" check .
 run_check "2" "Mypy (Static Type Analysis)" "${VENV_BIN}/mypy" manage.py tests accounts config decisions exports frameworks llm
 run_check "3" "Bandit (Security Vulnerability Scan)" "${VENV_BIN}/bandit" -c pyproject.toml -r accounts config decisions exports frameworks llm -q
-run_check "4" "Pytest (Full Test Suite)" "${VENV_BIN}/pytest"
+run_check "4" "Django Migration Drift Check" "${VENV_BIN}/python" manage.py makemigrations --check --dry-run
+run_check "5" "Pytest (Full Test Suite & Coverage)" "${VENV_BIN}/pytest" --cov=. --cov-report=term-missing --cov-fail-under=85
 
 echo "======================================================================"
 if [ ${#FAILED_CHECKS[@]} -eq 0 ]; then
