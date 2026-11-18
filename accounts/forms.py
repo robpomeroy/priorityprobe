@@ -25,6 +25,13 @@ CLOUD_METADATA_IPS = {
     ipaddress.ip_address("100.100.100.200"),
 }
 
+LOOPBACK_HOSTS = {
+    "localhost",
+    "127.0.0.1",
+    "::1",
+    "0:0:0:0:0:0:0:1",
+}
+
 
 def is_restricted_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     if hasattr(ip, "ipv4_mapped") and ip.ipv4_mapped:
@@ -58,40 +65,33 @@ def is_safe_ollama_endpoint(hostname: str) -> bool:
     if target_host in CLOUD_METADATA_HOSTS:
         return False
 
+    is_debug = bool(getattr(settings, "DEBUG", False))
     allowlist = getattr(settings, "OLLAMA_ALLOWED_HOSTS", None)
     if allowlist is not None:
         normalized_allowlist = {h.strip().lower() for h in allowlist if h.strip()}
+        loopback_allowed = is_debug or bool(normalized_allowlist & LOOPBACK_HOSTS)
+
+        # Allowlisted endpoint: verify it is not restricted
         if target_host in normalized_allowlist:
             try:
                 ip = ipaddress.ip_address(target_host)
-                return not is_restricted_ip(ip)
-            except ValueError:
-                # Hostname allowlisted: verify resolved IPs are not restricted metadata
-                try:
-                    addr_infos = socket.getaddrinfo(target_host, None, socket.AF_UNSPEC)
-                    if not addr_infos:
-                        return False
-                    for _, _, _, _, sockaddr in addr_infos:
-                        resolved_ip = ipaddress.ip_address(sockaddr[0])
-                        if is_restricted_ip(resolved_ip):
-                            return False
-                    return True
-                except (socket.gaierror, ValueError, OSError):
+                if is_restricted_ip(ip):
                     return False
-        if "localhost" in normalized_allowlist and target_host in (
-            "127.0.0.1",
-            "::1",
-            "0:0:0:0:0:0:0:1",
-        ):
+                if ip.is_loopback and not loopback_allowed:
+                    return False
+                return True
+            except ValueError:
+                # Target is an allowlisted hostname (e.g. Docker sidecar 'ollama').
+                # Form validation allows configured hostnames without synchronous DNS calls;
+                # connection-time IP validation & anti-rebinding are enforced by SSRFSafeTransport.
+                return True
+
+        if loopback_allowed and target_host in LOOPBACK_HOSTS:
             return True
+        return False
 
     # In local development (DEBUG=True), allow localhost and loopbacks by default
-    if getattr(settings, "DEBUG", False) and target_host in (
-        "localhost",
-        "127.0.0.1",
-        "::1",
-        "0:0:0:0:0:0:0:1",
-    ):
+    if is_debug and target_host in LOOPBACK_HOSTS:
         return True
 
     try:

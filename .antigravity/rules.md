@@ -75,11 +75,18 @@ Prepare and maintain documentation for the following key stakeholders/audiences:
 
 ## 6. Static Analysis and QA Quality Gate
 
-Always execute the automated QA gate (`bin/qa.sh`) before finalizing any task or creating git commits:
-1. **Ruff**: Linting, style consistency, and unused import/dead code detection (`ruff check .`).
-2. **Mypy**: Static type verification across all application packages (`mypy accounts config decisions exports frameworks llm`).
-3. **Bandit**: Security vulnerability and CWE scanning (`bandit -c pyproject.toml -r ...`).
-4. **Pytest**: Complete automated test suite (`pytest`).
+Always execute the automated QA gate (`bin/qa.sh`) before finalizing any task
+or creating git commits:
+1. **Ruff**: Linting, style consistency, and unused import/dead code detection
+   (`ruff check .`).
+2. **Mypy**: Static type verification across all application packages
+   (`mypy manage.py tests accounts config decisions exports frameworks llm`).
+3. **Bandit**: Security vulnerability and CWE scanning
+   (`bandit -c pyproject.toml -r ...`).
+4. **Migrations**: Django schema drift verification
+   (`python manage.py makemigrations --check --dry-run`).
+5. **Pytest**: Complete automated test suite with test coverage verification
+   (`pytest --cov=. --cov-report=term-missing --cov-fail-under=85`).
 
 No commits should be made if any of these checks fail.
 

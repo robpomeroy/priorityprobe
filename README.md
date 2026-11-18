@@ -81,7 +81,7 @@ coverage run -m pytest
 coverage report
 ```
 
-Current test suite coverage: **90%** across all application modules.
+Current test suite coverage: **93%** (all application modules >= 85%).
 
 ---
 

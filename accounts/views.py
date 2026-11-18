@@ -1,5 +1,4 @@
 import logging
-from urllib.parse import urlparse
 
 from django.contrib import messages
 from django.contrib.auth import login, logout
@@ -123,30 +122,10 @@ def test_llm_connection_view(request):
     if success:
         messages.success(request, f"Connection verified successfully! ({provider}: {model_name})")
     else:
-        sanitized_base = api_base or "[default]"
-        if api_base:
-            try:
-                parsed_base = urlparse(api_base)
-                if parsed_base.username or parsed_base.password:
-                    netloc = parsed_base.hostname or ""
-                    if parsed_base.port:
-                        netloc = f"{netloc}:{parsed_base.port}"
-                    sanitized_base = parsed_base._replace(netloc=netloc).geturl()
-            except ValueError:
-                sanitized_base = "[invalid-url]"
+        from llm.service import sanitize_credentials, sanitize_url
 
-        sanitized_resp = response_text
-        if api_key and api_key in sanitized_resp:
-            sanitized_resp = sanitized_resp.replace(api_key, "[REDACTED]")
-        if api_base and sanitized_base != "[invalid-url]":
-            try:
-                parsed_base = urlparse(api_base)
-                if parsed_base.username and parsed_base.username in sanitized_resp:
-                    sanitized_resp = sanitized_resp.replace(parsed_base.username, "[REDACTED]")
-                if parsed_base.password and parsed_base.password in sanitized_resp:
-                    sanitized_resp = sanitized_resp.replace(parsed_base.password, "[REDACTED]")
-            except ValueError:
-                sanitized_resp = "[REDACTED]"
+        sanitized_base = sanitize_url(api_base)
+        sanitized_resp = sanitize_credentials(response_text, api_key=api_key, api_base=api_base)
 
         logger.warning(
             "LLM test connection failure for user '%s' (%s/%s, base=%s): %s",

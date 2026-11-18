@@ -34,7 +34,12 @@ class SSRFSafeTransport(httpx.HTTPTransport):
         super().__init__(**kwargs)
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
-        from accounts.forms import CLOUD_METADATA_HOSTS, is_restricted_ip, is_safe_ollama_endpoint
+        from accounts.forms import (
+            CLOUD_METADATA_HOSTS,
+            LOOPBACK_HOSTS,
+            is_restricted_ip,
+            is_safe_ollama_endpoint,
+        )
 
         original_host = (request.url.host or "").strip().lower()
         original_port = request.url.port
@@ -52,7 +57,13 @@ class SSRFSafeTransport(httpx.HTTPTransport):
         # Check explicit hostname allowlist
         is_allowlisted = original_host in self.allowlist or (
             "localhost" in self.allowlist
-            and original_host in ("127.0.0.1", "::1", "0:0:0:0:0:0:0:1")
+            and original_host in LOOPBACK_HOSTS
+        )
+        is_debug = bool(getattr(settings, "DEBUG", False))
+        loopback_allowed = (
+            is_debug
+            or (original_host in LOOPBACK_HOSTS)
+            or bool(self.allowlist & LOOPBACK_HOSTS)
         )
 
         # Resolve host to IP addresses (supports dual-stack IPv4/IPv6)
@@ -71,6 +82,11 @@ class SSRFSafeTransport(httpx.HTTPTransport):
             try:
                 ip_obj = ipaddress.ip_address(ip_str)
                 if is_restricted_ip(ip_obj):
+                    raise ValueError(
+                        f"Outbound connection blocked: destination {ip_str} "
+                        "is private or restricted."
+                    )
+                if ip_obj.is_loopback and not loopback_allowed:
                     raise ValueError(
                         f"Outbound connection blocked: destination {ip_str} "
                         "is private or restricted."
@@ -202,6 +218,48 @@ GUIDED_MODES = {
 }
 
 
+def sanitize_url(url: str | None) -> str:
+    """
+    Sanitize a URL for safe logging and display by stripping basic authentication credentials.
+    Returns '[default]' if url is empty, or '[invalid-url]' if parsing fails.
+    """
+    if not url:
+        return "[default]"
+    try:
+        parsed = urlparse(url)
+        if parsed.username or parsed.password:
+            netloc = parsed.hostname or ""
+            if parsed.port:
+                netloc = f"{netloc}:{parsed.port}"
+            return parsed._replace(netloc=netloc).geturl()
+        return url
+    except ValueError:
+        return "[invalid-url]"
+
+
+def sanitize_credentials(
+    text: str,
+    api_key: str | None = None,
+    api_base: str | None = None,
+) -> str:
+    """
+    Scrub raw API keys and basic auth credentials from log messages or error traces (CWE-532).
+    """
+    sanitized = text
+    if api_key and api_key in sanitized:
+        sanitized = sanitized.replace(api_key, "[REDACTED]")
+    if api_base:
+        try:
+            parsed = urlparse(api_base)
+            if parsed.username and parsed.username in sanitized:
+                sanitized = sanitized.replace(parsed.username, "[REDACTED]")
+            if parsed.password and parsed.password in sanitized:
+                sanitized = sanitized.replace(parsed.password, "[REDACTED]")
+        except ValueError:
+            pass
+    return sanitized
+
+
 def generate_reflection(
     user_context_markdown: str,
     user_prompt: str,
@@ -327,17 +385,7 @@ def generate_reflection(
             return False, err_msg
 
         # Redact credentials if echoed in exception
-        if api_key and api_key in err_msg:
-            err_msg = err_msg.replace(api_key, "[REDACTED]")
-        if resolved_api_base:
-            try:
-                parsed = urlparse(resolved_api_base)
-                if parsed.password and parsed.password in err_msg:
-                    err_msg = err_msg.replace(parsed.password, "[REDACTED]")
-                if parsed.username and parsed.username in err_msg:
-                    err_msg = err_msg.replace(parsed.username, "[REDACTED]")
-            except ValueError:
-                pass
+        err_msg = sanitize_credentials(err_msg, api_key=api_key, api_base=resolved_api_base)
 
         logger.warning("LLM generation error (%s/%s): %s", provider, normalized_model, err_msg)
         lower_err = err_msg.lower()

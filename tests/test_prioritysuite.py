@@ -2229,3 +2229,121 @@ def test_user_llm_config_form_retained_api_key_validation(user):
             instance=cfg,
         )
         assert form3.is_valid(), form3.errors
+
+
+def test_dns_rebinding_ssrf_prevention():
+    import socket
+
+    from llm.service import SSRFSafeTransport, httpx
+
+    # In production (DEBUG=False), allowlisting a non-loopback host must not permit
+    # connecting to loopback if that host resolves to 127.0.0.1 or ::1 via DNS rebinding.
+    transport = SSRFSafeTransport(allowlist=["ollama.partner.example"])
+    req_v4 = httpx.Request("GET", "http://ollama.partner.example:11434/v1/models")
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 11434))],
+    ):
+        with pytest.raises(ValueError, match="Outbound connection blocked"):
+            transport.handle_request(req_v4)
+
+    req_v6 = httpx.Request("GET", "http://ollama.partner.example:11434/v1/models")
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("::1", 11434))],
+    ):
+        with pytest.raises(ValueError, match="Outbound connection blocked"):
+            transport.handle_request(req_v6)
+
+
+def test_offline_allowlisted_sidecar_endpoint(settings):
+    import socket
+
+    from accounts.forms import is_safe_ollama_endpoint
+
+    settings.DEBUG = False
+    settings.OLLAMA_ALLOWED_HOSTS = ["ollama.offline-sidecar.local"]
+
+    # Even if DNS resolution for the offline sidecar fails with gaierror,
+    # the allowlisted hostname must be accepted by form validation.
+    with patch("socket.getaddrinfo", side_effect=socket.gaierror("NXDOMAIN")):
+        assert is_safe_ollama_endpoint("ollama.offline-sidecar.local") is True
+
+
+def test_shared_sanitization_helpers():
+    from llm.service import sanitize_credentials, sanitize_url
+
+    url_with_auth = "https://user:secretpass@api.example.com/v1"
+    assert sanitize_url(url_with_auth) == "https://api.example.com/v1"
+    assert sanitize_url("http://api.example.com:8080/v1") == "http://api.example.com:8080/v1"
+    assert sanitize_url("") == "[default]"
+    assert sanitize_url(None) == "[default]"
+    assert sanitize_url("http://[invalid:url") == "[invalid-url]"
+
+    msg = "Connection failed with key sk-secret123 and auth https://user:pass456@api.com"
+    sanitized = sanitize_credentials(
+        msg,
+        api_key="sk-secret123",
+        api_base="https://user:pass456@api.com",
+    )
+    assert "sk-secret123" not in sanitized
+    assert "pass456" not in sanitized
+    assert "[REDACTED]" in sanitized
+
+
+def test_accounts_forms_endpoint_safety(settings):
+    import ipaddress
+    import socket
+
+    from accounts.forms import (
+        _is_ip_address_safe,
+        is_restricted_ip,
+        is_safe_ollama_endpoint,
+    )
+
+    # 1. IPv4-mapped IPv6 address handling
+    mapped_ip = ipaddress.ip_address("::ffff:127.0.0.1")
+    assert is_restricted_ip(mapped_ip) is False
+    settings.DEBUG = True
+    assert _is_ip_address_safe(mapped_ip) is True
+    settings.DEBUG = False
+    assert _is_ip_address_safe(mapped_ip) is False
+
+    # 2. Metadata hosts
+    assert is_safe_ollama_endpoint("169.254.169.254") is False
+
+    # 3. Allowlist with raw IP endpoints
+    settings.OLLAMA_ALLOWED_HOSTS = ["127.0.0.1", "169.254.169.254"]
+    settings.DEBUG = False
+    # 169.254.169.254 is restricted metadata, blocked even if allowlisted
+    assert is_safe_ollama_endpoint("169.254.169.254") is False
+    # 127.0.0.1 is allowlisted
+    assert is_safe_ollama_endpoint("127.0.0.1") is True
+
+    # Allowlist without loopback in production blocks loopback
+    settings.OLLAMA_ALLOWED_HOSTS = ["ollama.prod.example"]
+    assert is_safe_ollama_endpoint("127.0.0.1") is False
+
+    # 4. Fallback when OLLAMA_ALLOWED_HOSTS is None
+    settings.OLLAMA_ALLOWED_HOSTS = None
+    settings.DEBUG = True
+    assert is_safe_ollama_endpoint("localhost") is True
+    settings.DEBUG = False
+    assert is_safe_ollama_endpoint("localhost") is False
+    assert is_safe_ollama_endpoint("10.0.0.1") is False
+    assert is_safe_ollama_endpoint("8.8.8.8") is True
+
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 11434))],
+    ):
+        assert is_safe_ollama_endpoint("remote.public.example") is True
+
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 11434))],
+    ):
+        assert is_safe_ollama_endpoint("internal.private.example") is False
+
+    with patch("socket.getaddrinfo", side_effect=socket.gaierror("lookup error")):
+        assert is_safe_ollama_endpoint("invalid.domain.xyz") is False
