@@ -11,6 +11,7 @@ from accounts.models import UserLLMConfig
 
 logger = logging.getLogger(__name__)
 
+
 def register_view(request):
     if request.user.is_authenticated:
         return redirect("frameworks:workspace")
@@ -27,6 +28,7 @@ def register_view(request):
     else:
         form = UserRegistrationForm()
     return render(request, "accounts/register.html", {"form": form})
+
 
 @login_required
 def settings_view(request):
@@ -50,15 +52,21 @@ def settings_view(request):
         form = UserLLMConfigForm(instance=config)
     return render(request, "accounts/settings.html", {"form": form, "config": config})
 
+
 @login_required
 def delete_account_view(request):
     if request.method == "POST":
         user = request.user
         logout(request)
         user.delete()
-        messages.info(request, "Your account and all associated frameworks and decisions have been completely deleted from PrioritySuite.")
+        messages.info(
+            request,
+            "Your account and all associated frameworks and decisions have been "
+            "completely deleted from PrioritySuite.",
+        )
         return redirect("accounts:login")
     return render(request, "accounts/delete_account.html")
+
 
 @login_required
 def test_llm_connection_view(request):
@@ -71,11 +79,16 @@ def test_llm_connection_view(request):
         provider = request.POST.get("provider", "none")
         model_name = request.POST.get("model_name", "").strip()
         api_base = request.POST.get("api_base", "").strip()
-        consent_given = str(request.POST.get("consent_given", "")).lower() in ("on", "true", "1") or request.POST.get("consent_given") is True
+        consent_given = (
+            str(request.POST.get("consent_given", "")).lower() in ("on", "true", "1")
+            or request.POST.get("consent_given") is True
+        )
         raw_key = (request.POST.get("raw_api_key") or request.POST.get("api_key") or "").strip()
         # Only reuse saved key if both submitted provider and api_base match saved configuration
         api_base_matches = (api_base == (config.api_base or "").strip()) if config else False
-        api_key = raw_key or (config.api_key if (config and config.provider == provider and api_base_matches) else "")
+        api_key = raw_key or (
+            config.api_key if (config and config.provider == provider and api_base_matches) else ""
+        )
     else:
         if not config:
             messages.warning(request, "Please configure an active LLM provider before testing.")
@@ -86,7 +99,9 @@ def test_llm_connection_view(request):
         consent_given = config.consent_given
         api_key = config.api_key
 
-    valid_providers = {choice[0] for choice in UserLLMConfig.PROVIDER_CHOICES if choice[0] != "none"}
+    valid_providers = {
+        choice[0] for choice in UserLLMConfig.PROVIDER_CHOICES if choice[0] != "none"
+    }
     if provider not in valid_providers or not model_name:
         messages.warning(request, "Please configure an active LLM provider before testing.")
         return redirect("accounts:settings")
@@ -95,6 +110,7 @@ def test_llm_connection_view(request):
         return redirect("accounts:settings")
 
     from llm.service import generate_reflection
+
     success, response_text = generate_reflection(
         user_context_markdown="Ping test connection from PrioritySuite settings.",
         user_prompt="Reply with exactly: 'PrioritySuite thinking partner connection verified.'",
@@ -106,7 +122,7 @@ def test_llm_connection_view(request):
     if success:
         messages.success(request, f"Connection verified successfully! ({provider}: {model_name})")
     else:
-        # Sanitize api_base and response_text before logging to prevent credential leakage (CWE-532)
+        # Sanitize api_base and response_text before logging (CWE-532)
         sanitized_base = api_base
         if api_base:
             try:
@@ -132,12 +148,24 @@ def test_llm_connection_view(request):
 
         logger.warning(
             "LLM test connection failure for user '%s' (%s/%s, base=%s): %s",
-            request.user.username, provider, model_name, sanitized_base, sanitized_resp
+            request.user.username,
+            provider,
+            model_name,
+            sanitized_base,
+            sanitized_resp,
         )
-        # Preserve specific policy validation errors while sanitizing lower-level stack/connection traces
-        if response_text.startswith(("Invalid API base URL:", "Outbound connection blocked:")) or "Consent" in response_text or "disabled" in response_text or "unconfigured" in response_text:
+        # Preserve policy validation errors while sanitizing stack/connection traces
+        if (
+            response_text.startswith(("Invalid API base URL:", "Outbound connection blocked:"))
+            or "Consent" in response_text
+            or "disabled" in response_text
+            or "unconfigured" in response_text
+        ):
             display_err = response_text
         else:
-            display_err = "The LLM endpoint could not be reached or returned an authentication/connectivity error. Check settings and credentials."
+            display_err = (
+                "The LLM endpoint could not be reached or returned an "
+                "authentication/connectivity error. Check settings and credentials."
+            )
         messages.error(request, f"Connection failed: {display_err}")
     return redirect("accounts:settings")

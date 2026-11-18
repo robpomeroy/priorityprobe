@@ -17,12 +17,20 @@ class DecisionRecordAdmin(admin.ModelAdmin):
         return qs.filter(framework__owner=request.user)
 
     def has_change_permission(self, request, obj=None):
-        if obj is not None and not request.user.is_superuser and obj.framework.owner != request.user:
+        if (
+            obj is not None
+            and not request.user.is_superuser
+            and obj.framework.owner != request.user
+        ):
             return False
         return super().has_change_permission(request, obj)
 
     def has_delete_permission(self, request, obj=None):
-        if obj is not None and not request.user.is_superuser and obj.framework.owner != request.user:
+        if (
+            obj is not None
+            and not request.user.is_superuser
+            and obj.framework.owner != request.user
+        ):
             return False
         return super().has_delete_permission(request, obj)
 
@@ -38,8 +46,11 @@ class DecisionRecordAdmin(admin.ModelAdmin):
             elif db_field.name == "relevant_whys":
                 kwargs["queryset"] = Why.objects.filter(domain__framework__owner=request.user)
             elif db_field.name in ("supporting_objectives", "conflicting_objectives"):
-                kwargs["queryset"] = Objective.objects.filter(primary_domain__framework__owner=request.user)
+                kwargs["queryset"] = Objective.objects.filter(
+                    primary_domain__framework__owner=request.user
+                )
         return super().formfield_for_manytomany(db_field, request, **kwargs)
+
 
 @admin.register(LLMReflectionLog)
 class LLMReflectionLogAdmin(admin.ModelAdmin):
@@ -53,12 +64,20 @@ class LLMReflectionLogAdmin(admin.ModelAdmin):
         return qs.filter(framework__owner=request.user)
 
     def has_change_permission(self, request, obj=None):
-        if obj is not None and not request.user.is_superuser and obj.framework.owner != request.user:
+        if (
+            obj is not None
+            and not request.user.is_superuser
+            and obj.framework.owner != request.user
+        ):
             return False
         return super().has_change_permission(request, obj)
 
     def has_delete_permission(self, request, obj=None):
-        if obj is not None and not request.user.is_superuser and obj.framework.owner != request.user:
+        if (
+            obj is not None
+            and not request.user.is_superuser
+            and obj.framework.owner != request.user
+        ):
             return False
         return super().has_delete_permission(request, obj)
 

@@ -17,29 +17,41 @@ from frameworks.services import remove_sample_frameworks, seed_sample_framework
 
 @pytest.fixture
 def user(db):
-    return User.objects.create_user(username="testuser", email="test@example.com", password="password123")
+    return User.objects.create_user(
+        username="testuser", email="test@example.com", password="password123"
+    )
+
 
 @pytest.fixture
 def other_user(db):
-    return User.objects.create_user(username="otheruser", email="other@example.com", password="password123")
+    return User.objects.create_user(
+        username="otheruser", email="other@example.com", password="password123"
+    )
+
 
 @pytest.fixture
 def framework(user):
     return Framework.objects.create(owner=user, name="Personal Priorities")
 
+
 @pytest.fixture
 def domain(framework):
     return Domain.objects.create(framework=framework, name="Work & Vocation", display_order=1)
+
 
 @pytest.fixture
 def why(domain):
     return Why.objects.create(domain=domain, title="To do honest work", is_non_negotiable=True)
 
+
 @pytest.fixture
 def objective(domain, why):
-    obj = Objective.objects.create(primary_domain=domain, title="Maintain craft excellence", status=StatusChoices.ACTIVE)
+    obj = Objective.objects.create(
+        primary_domain=domain, title="Maintain craft excellence", status=StatusChoices.ACTIVE
+    )
     obj.whys.add(why)
     return obj
+
 
 @pytest.fixture
 def goal(domain, objective):
@@ -47,7 +59,9 @@ def goal(domain, objective):
     g.objectives.add(objective)
     return g
 
+
 # --- 1. Crypto & Accounts Tests ---
+
 
 def test_crypto_roundtrip():
     raw = "sk-openrouter-secret-key-12345"
@@ -58,8 +72,11 @@ def test_crypto_roundtrip():
     assert decrypt_value("") == ""
     assert encrypt_value("") == ""
 
+
 def test_user_llm_config_encryption(user):
-    config = UserLLMConfig.objects.create(user=user, provider="openrouter", model_name="openrouter/anthropic/claude-3.5-sonnet")
+    config = UserLLMConfig.objects.create(
+        user=user, provider="openrouter", model_name="openrouter/anthropic/claude-3.5-sonnet"
+    )
     config.api_key = "secret-key-test"
     config.save()
 
@@ -67,42 +84,55 @@ def test_user_llm_config_encryption(user):
     assert config._encrypted_api_key != "secret-key-test"
     assert str(config).startswith("LLM Config for testuser")
 
+
 def test_user_registration_and_login(db, client):
-    response = client.post("/accounts/register/", {
-        "username": "newperson",
-        "email": "new@example.com",
-        "password": "strongpassword123",
-        "password_confirm": "strongpassword123",
-    })
+    response = client.post(
+        "/accounts/register/",
+        {
+            "username": "newperson",
+            "email": "new@example.com",
+            "password": "strongpassword123",
+            "password_confirm": "strongpassword123",
+        },
+    )
     assert response.status_code == 302
     assert User.objects.filter(username="newperson").exists()
 
+
 def test_user_registration_mismatch(db, client):
-    response = client.post("/accounts/register/", {
-        "username": "newperson2",
-        "email": "new2@example.com",
-        "password": "strongpassword123",
-        "password_confirm": "wrong",
-    })
+    response = client.post(
+        "/accounts/register/",
+        {
+            "username": "newperson2",
+            "email": "new2@example.com",
+            "password": "strongpassword123",
+            "password_confirm": "wrong",
+        },
+    )
     assert response.status_code == 200
     assert not User.objects.filter(username="newperson2").exists()
 
+
 def test_user_settings_update(client, user):
     client.force_login(user)
-    response = client.post("/accounts/settings/", {
-        "provider": "openrouter",
-        "model_name": "openrouter/anthropic/claude-3.5-sonnet",
-        "api_base": "https://openrouter.ai/api/v1",
-        "raw_api_key": "new-secret-api-key",
-        "consent_given": True,
-        "theme_preference": "dark",
-    })
+    response = client.post(
+        "/accounts/settings/",
+        {
+            "provider": "openrouter",
+            "model_name": "openrouter/anthropic/claude-3.5-sonnet",
+            "api_base": "https://openrouter.ai/api/v1",
+            "raw_api_key": "new-secret-api-key",
+            "consent_given": True,
+            "theme_preference": "dark",
+        },
+    )
     assert response.status_code == 302
     config = user.llm_config
     assert config.provider == "openrouter"
     assert config.api_key == "new-secret-api-key"
     assert config.consent_given is True
     assert config.theme_preference == "dark"
+
 
 def test_user_delete_account(client, user, framework):
     client.force_login(user)
@@ -111,7 +141,9 @@ def test_user_delete_account(client, user, framework):
     assert not User.objects.filter(id=user.id).exists()
     assert not Framework.objects.filter(id=framework.id).exists()
 
+
 # --- 2. Frameworks & Seeder Tests ---
+
 
 def test_framework_str_and_relationships(framework, domain, why, objective, goal):
     assert str(framework) == f"Personal Priorities ({framework.owner.username})"
@@ -121,6 +153,7 @@ def test_framework_str_and_relationships(framework, domain, why, objective, goal
     assert str(goal) == "Ship MVP"
     assert objective.whys.first() == why
     assert goal.objectives.first() == objective
+
 
 def test_sample_seeder_and_removal(user):
     sample_fw = seed_sample_framework(user)
@@ -133,28 +166,36 @@ def test_sample_seeder_and_removal(user):
     assert deleted_count == 1
     assert not Framework.objects.filter(id=sample_fw.id).exists()
 
+
 def test_workspace_view(client, user, framework, domain):
     client.force_login(user)
     response = client.get(f"/frameworks/framework/{framework.id}/")
     assert response.status_code == 200
     assert "Work &amp; Vocation" in response.content.decode()
 
+
 def test_crud_domain(client, user, framework):
     client.force_login(user)
     # Create
-    resp = client.post(f"/frameworks/framework/{framework.id}/domain/create/", {
-        "name": "Personal Growth",
-        "description": "Continuous learning and stewardship",
-        "display_order": 2,
-    })
+    resp = client.post(
+        f"/frameworks/framework/{framework.id}/domain/create/",
+        {
+            "name": "Personal Growth",
+            "description": "Continuous learning and stewardship",
+            "display_order": 2,
+        },
+    )
     assert resp.status_code == 302
     d = Domain.objects.get(name="Personal Growth")
     # Edit
-    resp = client.post(f"/frameworks/domain/{d.id}/edit/", {
-        "name": "Personal Development",
-        "description": "Updated",
-        "display_order": 3,
-    })
+    resp = client.post(
+        f"/frameworks/domain/{d.id}/edit/",
+        {
+            "name": "Personal Development",
+            "description": "Updated",
+            "display_order": 3,
+        },
+    )
     assert resp.status_code == 302
     d.refresh_from_db()
     assert d.name == "Personal Development"
@@ -163,25 +204,32 @@ def test_crud_domain(client, user, framework):
     assert resp.status_code == 302
     assert not Domain.objects.filter(id=d.id).exists()
 
+
 def test_crud_why(client, user, domain):
     client.force_login(user)
     # Create Why
-    resp = client.post(f"/frameworks/domain/{domain.id}/why/create/", {
-        "title": "To provide for my dependents",
-        "description": "Financial stewardship",
-        "is_non_negotiable": True,
-        "display_order": 1,
-    })
+    resp = client.post(
+        f"/frameworks/domain/{domain.id}/why/create/",
+        {
+            "title": "To provide for my dependents",
+            "description": "Financial stewardship",
+            "is_non_negotiable": True,
+            "display_order": 1,
+        },
+    )
     assert resp.status_code == 302
     w = Why.objects.get(title="To provide for my dependents")
     assert w.is_non_negotiable is True
     # Edit Why
-    resp = client.post(f"/frameworks/why/{w.id}/edit/", {
-        "title": "To support my family well",
-        "description": "Updated",
-        "is_non_negotiable": False,
-        "display_order": 2,
-    })
+    resp = client.post(
+        f"/frameworks/why/{w.id}/edit/",
+        {
+            "title": "To support my family well",
+            "description": "Updated",
+            "is_non_negotiable": False,
+            "display_order": 2,
+        },
+    )
     assert resp.status_code == 302
     w.refresh_from_db()
     assert w.title == "To support my family well"
@@ -191,27 +239,34 @@ def test_crud_why(client, user, domain):
     assert resp.status_code == 302
     assert not Why.objects.filter(id=w.id).exists()
 
+
 def test_crud_objective_and_goal(client, user, framework, domain, why):
     client.force_login(user)
     # Create Objective
-    resp = client.post(f"/frameworks/framework/{framework.id}/objective/create/", {
-        "primary_domain": domain.id,
-        "title": "Build emergency fund",
-        "description": "Resilience buffer",
-        "whys": [why.id],
-        "status": "ACTIVE",
-    })
+    resp = client.post(
+        f"/frameworks/framework/{framework.id}/objective/create/",
+        {
+            "primary_domain": domain.id,
+            "title": "Build emergency fund",
+            "description": "Resilience buffer",
+            "whys": [why.id],
+            "status": "ACTIVE",
+        },
+    )
     assert resp.status_code == 302
     obj = Objective.objects.get(title="Build emergency fund")
 
     # Create Goal
-    resp = client.post(f"/frameworks/framework/{framework.id}/goal/create/", {
-        "primary_domain": domain.id,
-        "title": "Save £10k",
-        "description": "Over 2 years",
-        "objectives": [obj.id],
-        "status": "ACTIVE",
-    })
+    resp = client.post(
+        f"/frameworks/framework/{framework.id}/goal/create/",
+        {
+            "primary_domain": domain.id,
+            "title": "Save £10k",
+            "description": "Over 2 years",
+            "objectives": [obj.id],
+            "status": "ACTIVE",
+        },
+    )
     assert resp.status_code == 302
     g = Goal.objects.get(title="Save £10k")
 
@@ -220,6 +275,7 @@ def test_crud_objective_and_goal(client, user, framework, domain, why):
     client.post(f"/frameworks/objective/{obj.id}/delete/")
     assert not Goal.objects.filter(id=g.id).exists()
     assert not Objective.objects.filter(id=obj.id).exists()
+
 
 def test_review_and_mark_reviewed(client, user, why, objective, goal):
     client.force_login(user)
@@ -240,9 +296,11 @@ def test_review_and_mark_reviewed(client, user, why, objective, goal):
     assert objective.last_reviewed_at is not None
     assert objective.status == "PAUSED"
 
+
 def test_status_update_with_update_fields(client, user, objective, goal):
     client.force_login(user)
     import datetime
+
     test_date = datetime.date(2025, 1, 1)
     objective.last_reviewed_at = test_date
     objective.save()
@@ -262,21 +320,26 @@ def test_status_update_with_update_fields(client, user, objective, goal):
     assert goal.status == "COMPLETED"
     assert goal.last_reviewed_at == test_date
 
+
 # --- 3. Decisions Tests ---
+
 
 def test_decisions_workflow(client, user, framework, domain, why, objective):
     client.force_login(user)
     # Create Decision
-    resp = client.post("/decisions/create/", {
-        "title": "Promotion Offer",
-        "proposal_description": "Step into VP Engineering role with 30% more travel",
-        "affected_domains": [domain.id],
-        "relevant_whys": [why.id],
-        "supporting_objectives": [objective.id],
-        "conflicting_objectives": [],
-        "benefits_and_costs": "More money, less family time",
-        "status": "EXPLORING",
-    })
+    resp = client.post(
+        "/decisions/create/",
+        {
+            "title": "Promotion Offer",
+            "proposal_description": "Step into VP Engineering role with 30% more travel",
+            "affected_domains": [domain.id],
+            "relevant_whys": [why.id],
+            "supporting_objectives": [objective.id],
+            "conflicting_objectives": [],
+            "benefits_and_costs": "More money, less family time",
+            "status": "EXPLORING",
+        },
+    )
     assert resp.status_code == 302
     dec = DecisionRecord.objects.get(title="Promotion Offer")
     assert dec.affected_domains.first() == domain
@@ -287,12 +350,15 @@ def test_decisions_workflow(client, user, framework, domain, why, objective):
     assert "Promotion Offer" in resp.content.decode()
 
     # Edit Decision
-    resp = client.post(f"/decisions/{dec.id}/edit/", {
-        "title": "Promotion Offer (Revised)",
-        "proposal_description": "Negotiated remote options",
-        "status": "DECIDED",
-        "decision_outcome": "Accepted with remote boundary",
-    })
+    resp = client.post(
+        f"/decisions/{dec.id}/edit/",
+        {
+            "title": "Promotion Offer (Revised)",
+            "proposal_description": "Negotiated remote options",
+            "status": "DECIDED",
+            "decision_outcome": "Accepted with remote boundary",
+        },
+    )
     assert resp.status_code == 302
     dec.refresh_from_db()
     assert dec.status == DecisionStatus.DECIDED
@@ -302,7 +368,9 @@ def test_decisions_workflow(client, user, framework, domain, why, objective):
     assert resp.status_code == 302
     assert not DecisionRecord.objects.filter(id=dec.id).exists()
 
+
 # --- 4. Exports & LLM Adapter Tests ---
+
 
 def test_markdown_export(client, user, framework, domain, why, objective, goal):
     client.force_login(user)
@@ -320,15 +388,20 @@ def test_markdown_export(client, user, framework, domain, why, objective, goal):
     assert resp.status_code == 200
     assert resp["Content-Type"].startswith("text/markdown")
 
+
 @patch("litellm.completion")
 def test_llm_service_reflection_mocked(mock_completion, user, framework):
     mock_response = MagicMock()
     mock_choice = MagicMock()
-    mock_choice.message.content = "### Stated Priorities\nYou value honest work.\n\n### Potential Tensions & Inferences\nI infer promotion creates time strain."
+    mock_choice.message.content = (
+        "### Stated Priorities\nYou value honest work.\n\n"
+        "### Potential Tensions & Inferences\nI infer promotion creates time strain."
+    )
     mock_response.choices = [mock_choice]
     mock_completion.return_value = mock_response
 
     from llm.service import generate_reflection
+
     success, reflection = generate_reflection(
         user_context_markdown="# Context",
         user_prompt="Examine this choice",
@@ -340,8 +413,10 @@ def test_llm_service_reflection_mocked(mock_completion, user, framework):
     assert "### Stated Priorities" in reflection
     assert mock_completion.called
 
+
 def test_llm_service_disabled():
     from llm.service import generate_reflection
+
     success, msg = generate_reflection(
         user_context_markdown="# Context",
         user_prompt="Hello",
@@ -350,6 +425,7 @@ def test_llm_service_disabled():
     )
     assert success is False
     assert "disabled" in msg
+
 
 @patch("litellm.completion")
 def test_chat_view_reflection(mock_completion, client, user, framework, settings):
@@ -368,13 +444,18 @@ def test_chat_view_reflection(mock_completion, client, user, framework, settings
     config.save()
 
     client.force_login(user)
-    resp = client.post(f"/llm/framework/{framework.id}/chat/", {
-        "prompt": "Evaluate my framework",
-    })
+    resp = client.post(
+        f"/llm/framework/{framework.id}/chat/",
+        {
+            "prompt": "Evaluate my framework",
+        },
+    )
     assert resp.status_code == 302
     assert LLMReflectionLog.objects.filter(framework=framework).exists()
 
+
 # --- 5. Strict User Isolation Security Tests ---
+
 
 def test_cross_user_isolation(client, user, other_user, framework, domain):
     client.force_login(other_user)
@@ -389,16 +470,20 @@ def test_cross_user_isolation(client, user, other_user, framework, domain):
 
 # Additional Coverage Tests to exceed 85%
 
+
 def test_crypto_custom_key():
     from accounts.crypto import get_cipher
+
     with patch("accounts.crypto.settings") as mock_settings:
         mock_settings.SECRET_KEY = "test"
         mock_settings.ENCRYPTION_KEY = "custom-key-of-any-arbitrary-length"
         cipher = get_cipher()
         assert cipher is not None
 
+
 def test_crypto_decrypt_failure():
     assert decrypt_value("invalid-gibberish-string") == ""
+
 
 def test_decision_views_edge_cases(client, user, framework, domain, why, objective):
     client.force_login(user)
@@ -451,6 +536,7 @@ def test_decision_views_edge_cases(client, user, framework, domain, why, objecti
         assert resp.status_code == 302
         assert dec.reflections.count() >= 1
 
+
 def test_framework_views_modals_and_gets(client, user, framework, domain, why, objective, goal):
     client.force_login(user)
 
@@ -470,13 +556,16 @@ def test_framework_views_modals_and_gets(client, user, framework, domain, why, o
     assert client.get("/decisions/create/").status_code == 200
 
     # Mark reviewed for objective and goal
-    resp = client.post(f"/frameworks/review/mark/objective/{objective.id}/", HTTP_HX_REQUEST="true")
+    resp = client.post(
+        f"/frameworks/review/mark/objective/{objective.id}/", HTTP_HX_REQUEST="true"
+    )
     assert resp.status_code == 200
     resp = client.post(f"/frameworks/review/mark/goal/{goal.id}/", HTTP_HX_REQUEST="true")
     assert resp.status_code == 200
 
     # Filter review by status
     assert client.get("/frameworks/review/?status=ACTIVE").status_code == 200
+
 
 def test_chat_view_empty_and_no_consent(client, user, framework):
     client.force_login(user)
@@ -500,6 +589,7 @@ def test_chat_view_empty_and_no_consent(client, user, framework):
 
 # --- Tests for Copilot Review Fixes ---
 
+
 def test_secret_key_production_error():
     import importlib
     import os
@@ -509,7 +599,7 @@ def test_secret_key_production_error():
     from django.conf import settings
 
     old_debug = getattr(settings, "DEBUG", True)
-    # Ensure config.settings actually raises ValueError when imported with empty key and DEBUG=False
+    # Ensure config.settings raises ValueError when imported with empty key and DEBUG=False
     with patch.dict(os.environ, {"DJANGO_SECRET_KEY": "", "DEBUG": "False"}):
         if "config.settings" in sys.modules:
             del sys.modules["config.settings"]
@@ -523,29 +613,37 @@ def test_secret_key_production_error():
     settings._setup()
     settings.DEBUG = old_debug
 
+
 def test_api_base_ssrf_validation(client, user):
     client.force_login(user)
     # Metadata IP blocked
-    resp = client.post("/accounts/settings/", {
-        "provider": "openrouter",
-        "model_name": "openrouter/anthropic/claude-3.5-sonnet",
-        "api_base": "http://169.254.169.254/latest/meta-data/",
-        "consent_given": True,
-        "theme_preference": "auto",
-    })
+    resp = client.post(
+        "/accounts/settings/",
+        {
+            "provider": "openrouter",
+            "model_name": "openrouter/anthropic/claude-3.5-sonnet",
+            "api_base": "http://169.254.169.254/latest/meta-data/",
+            "consent_given": True,
+            "theme_preference": "auto",
+        },
+    )
     assert resp.status_code == 200
     assert "cloud metadata endpoints is prohibited" in resp.content.decode()
 
     # OpenRouter non-https blocked
-    resp = client.post("/accounts/settings/", {
-        "provider": "openrouter",
-        "model_name": "openrouter/anthropic/claude-3.5-sonnet",
-        "api_base": "http://openrouter.ai/api/v1",
-        "consent_given": True,
-        "theme_preference": "auto",
-    })
+    resp = client.post(
+        "/accounts/settings/",
+        {
+            "provider": "openrouter",
+            "model_name": "openrouter/anthropic/claude-3.5-sonnet",
+            "api_base": "http://openrouter.ai/api/v1",
+            "consent_given": True,
+            "theme_preference": "auto",
+        },
+    )
     assert resp.status_code == 200
     assert "OpenRouter connections must use HTTPS" in resp.content.decode()
+
 
 def test_admin_queryset_filtering(user, other_user, framework, domain, why, objective, goal):
     from django.contrib.admin.sites import AdminSite
@@ -580,7 +678,9 @@ def test_admin_queryset_filtering(user, other_user, framework, domain, why, obje
     assert fw_field.queryset.filter(owner=other_user).count() == 0
     assert fw_field.queryset.filter(owner=user).count() == 0
 
-    dec_fw_field = dec_admin.formfield_for_foreignkey(DecisionRecord._meta.get_field("framework"), request)
+    dec_fw_field = dec_admin.formfield_for_foreignkey(
+        DecisionRecord._meta.get_field("framework"), request
+    )
     assert dec_fw_field.queryset.filter(owner=other_user).count() == 0
 
     # Create UserLLMConfig for user
@@ -591,6 +691,7 @@ def test_admin_queryset_filtering(user, other_user, framework, domain, why, obje
     assert f_admin.get_queryset(request).count() >= 1
     assert d_admin.get_queryset(request).count() >= 1
     assert llm_admin.get_queryset(request).count() >= 1
+
 
 def test_decision_empty_prompt_uses_default(client, user, framework):
     client.force_login(user)
@@ -615,32 +716,40 @@ def test_decision_empty_prompt_uses_default(client, user, framework):
         called_prompt = mock_gen.call_args[1]["user_prompt"]
         assert "Analyze the cross-domain tensions" in called_prompt
 
+
 def test_registration_password_policy(client, db):
     # Common password rejected
-    resp = client.post("/accounts/register/", {
-        "username": "weakuser1",
-        "email": "weak1@example.com",
-        "password": "password",
-        "password_confirm": "password",
-    })
+    resp = client.post(
+        "/accounts/register/",
+        {
+            "username": "weakuser1",
+            "email": "weak1@example.com",
+            "password": "password",
+            "password_confirm": "password",
+        },
+    )
     assert resp.status_code == 200
     assert not User.objects.filter(username="weakuser1").exists()
 
     # Short password rejected
-    resp = client.post("/accounts/register/", {
-        "username": "weakuser2",
-        "email": "weak2@example.com",
-        "password": "abc",
-        "password_confirm": "abc",
-    })
+    resp = client.post(
+        "/accounts/register/",
+        {
+            "username": "weakuser2",
+            "email": "weak2@example.com",
+            "password": "abc",
+            "password_confirm": "abc",
+        },
+    )
     assert resp.status_code == 200
     assert not User.objects.filter(username="weakuser2").exists()
+
 
 def test_decision_export_instructions_and_filename_sanitization(client, user, framework):
     client.force_login(user)
     dec = DecisionRecord.objects.create(
         framework=framework,
-        title="Unsafe\r\nTitle \"With\" Slashes/And/Quotes",
+        title='Unsafe\r\nTitle "With" Slashes/And/Quotes',
         proposal_description="Test proposal",
     )
     # Decision export content contains facilitator instructions
@@ -655,10 +764,12 @@ def test_decision_export_instructions_and_filename_sanitization(client, user, fr
     assert "\r" not in cd and "\n" not in cd
     assert 'filename="decision_unsafe-title-with-slashesandquotes.md"' in cd
 
+
 def test_user_llm_admin_add_and_ownership_enforcement(user, other_user):
     from django.contrib.admin.sites import AdminSite
 
     from accounts.admin import UserLLMConfigAdmin
+
     site = AdminSite()
     llm_admin = UserLLMConfigAdmin(UserLLMConfig, site)
 
@@ -688,8 +799,10 @@ def test_user_llm_admin_add_and_ownership_enforcement(user, other_user):
 
 # --- 13. Phase 2 Enhancements Tests ---
 
+
 def test_domain_and_why_reordering(client, user, other_user, framework, domain):
     from frameworks.models import Domain, Why
+
     domain2 = Domain.objects.create(framework=framework, name="Second Domain", display_order=2)
     client.force_login(user)
 
@@ -759,10 +872,10 @@ def test_objective_and_goal_status_updates(client, user, other_user, objective, 
     client.force_login(user)
 
     # Update objective status
-    resp = client.post(f"/frameworks/objective/{objective.id}/status/", {
-        "status": StatusChoices.PAUSED,
-        "next": "/frameworks/workspace/"
-    })
+    resp = client.post(
+        f"/frameworks/objective/{objective.id}/status/",
+        {"status": StatusChoices.PAUSED, "next": "/frameworks/workspace/"},
+    )
     assert resp.status_code == 302
     objective.refresh_from_db()
     assert objective.status == StatusChoices.PAUSED
@@ -774,26 +887,35 @@ def test_objective_and_goal_status_updates(client, user, other_user, objective, 
 
     # Cross-user isolation on objective status
     client.force_login(other_user)
-    resp_cross = client.post(f"/frameworks/objective/{objective.id}/status/", {"status": StatusChoices.ACTIVE})
+    resp_cross = client.post(
+        f"/frameworks/objective/{objective.id}/status/", {"status": StatusChoices.ACTIVE}
+    )
     assert resp_cross.status_code == 404
 
     # Goal status update
     client.force_login(user)
-    resp_goal = client.post(f"/frameworks/goal/{goal.id}/status/", {"status": StatusChoices.COMPLETED})
+    resp_goal = client.post(
+        f"/frameworks/goal/{goal.id}/status/", {"status": StatusChoices.COMPLETED}
+    )
     assert resp_goal.status_code == 302
     goal.refresh_from_db()
     assert goal.status == StatusChoices.COMPLETED
 
     # Cross-user isolation on goal status
     client.force_login(other_user)
-    assert client.post(f"/frameworks/goal/{goal.id}/status/", {"status": StatusChoices.ACTIVE}).status_code == 404
+    assert (
+        client.post(
+            f"/frameworks/goal/{goal.id}/status/", {"status": StatusChoices.ACTIVE}
+        ).status_code
+        == 404
+    )
 
     # Open redirect protection: external target is rejected
     client.force_login(user)
-    resp_open = client.post(f"/frameworks/objective/{objective.id}/status/", {
-        "status": StatusChoices.PAUSED,
-        "next": "https://evil.com/phish"
-    })
+    resp_open = client.post(
+        f"/frameworks/objective/{objective.id}/status/",
+        {"status": StatusChoices.PAUSED, "next": "https://evil.com/phish"},
+    )
     assert resp_open.status_code == 302
     assert "evil.com" not in resp_open.url
 
@@ -802,6 +924,7 @@ def test_review_cadence_and_mark_all(client, user, framework, objective, goal):
     from datetime import timedelta
 
     from django.utils import timezone
+
     client.force_login(user)
 
     # Set initial review dates
@@ -835,43 +958,60 @@ def test_review_cadence_and_mark_all(client, user, framework, objective, goal):
 
 def test_priority_comparison_view(client, user, framework, domain, objective, goal):
     from frameworks.models import Domain, Goal, Objective, Why
+
     client.force_login(user)
 
     domain2 = Domain.objects.create(framework=framework, name="Health", display_order=2)
     why2 = Why.objects.create(domain=domain2, title="Longevity & vitality", is_non_negotiable=True)
-    obj2 = Objective.objects.create(primary_domain=domain2, title="Consistent rest", status=StatusChoices.ACTIVE)
+    obj2 = Objective.objects.create(
+        primary_domain=domain2, title="Consistent rest", status=StatusChoices.ACTIVE
+    )
     obj2.whys.add(why2)
 
     # GET comparison view (objectives)
-    resp = client.get(f"/decisions/compare/{framework.id}/?type=objectives&selected={objective.id}&selected={obj2.id}")
+    resp = client.get(
+        f"/decisions/compare/{framework.id}/?type=objectives&selected={objective.id}&selected={obj2.id}"
+    )
     assert resp.status_code == 200
     assert resp.context["compare_type"] == "objectives"
     assert objective in resp.context["items"]
     assert obj2 in resp.context["items"]
 
     # GET comparison view (goals)
-    goal2 = Goal.objects.create(primary_domain=domain2, title="Sleep 8 hours", status=StatusChoices.ACTIVE)
-    resp_goals = client.get(f"/decisions/compare/{framework.id}/?type=goals&selected={goal.id}&selected={goal2.id}")
+    goal2 = Goal.objects.create(
+        primary_domain=domain2, title="Sleep 8 hours", status=StatusChoices.ACTIVE
+    )
+    resp_goals = client.get(
+        f"/decisions/compare/{framework.id}/?type=goals&selected={goal.id}&selected={goal2.id}"
+    )
     assert resp_goals.status_code == 200
     assert resp_goals.context["compare_type"] == "goals"
     assert goal in resp_goals.context["items"]
     assert goal2 in resp_goals.context["items"]
 
     # POST action=convert_to_decision
-    resp_convert = client.post(f"/decisions/compare/{framework.id}/", {
-        "action": "convert_to_decision",
-        "type": "objectives",
-        "selected": [str(objective.id), str(obj2.id)],
-    })
+    resp_convert = client.post(
+        f"/decisions/compare/{framework.id}/",
+        {
+            "action": "convert_to_decision",
+            "type": "objectives",
+            "selected": [str(objective.id), str(obj2.id)],
+        },
+    )
     assert resp_convert.status_code == 302
-    assert DecisionRecord.objects.filter(framework=framework, title__startswith="Priority Comparison").exists()
+    assert DecisionRecord.objects.filter(
+        framework=framework, title__startswith="Priority Comparison"
+    ).exists()
 
     # POST action=reflect without consent redirects to settings
-    resp_no_consent = client.post(f"/decisions/compare/{framework.id}/", {
-        "action": "reflect",
-        "type": "objectives",
-        "selected": [str(objective.id), str(obj2.id)],
-    })
+    resp_no_consent = client.post(
+        f"/decisions/compare/{framework.id}/",
+        {
+            "action": "reflect",
+            "type": "objectives",
+            "selected": [str(objective.id), str(obj2.id)],
+        },
+    )
     assert resp_no_consent.status_code == 302
     assert resp_no_consent.url == "/accounts/settings/"
 
@@ -882,38 +1022,56 @@ def test_priority_comparison_view(client, user, framework, domain, objective, go
     config.model_name = "llama3.1"
     config.save()
 
-    with patch("decisions.views.generate_reflection", return_value=(True, "Comparison reflection from AI")):
-        resp_reflect = client.post(f"/decisions/compare/{framework.id}/", {
-            "action": "reflect",
-            "type": "objectives",
-            "selected": [str(objective.id), str(obj2.id)],
-            "prompt": "Evaluate trade-offs between craft and rest.",
-        })
+    with patch(
+        "decisions.views.generate_reflection", return_value=(True, "Comparison reflection from AI")
+    ):
+        resp_reflect = client.post(
+            f"/decisions/compare/{framework.id}/",
+            {
+                "action": "reflect",
+                "type": "objectives",
+                "selected": [str(objective.id), str(obj2.id)],
+                "prompt": "Evaluate trade-offs between craft and rest.",
+            },
+        )
         assert resp_reflect.status_code == 302
-        assert LLMReflectionLog.objects.filter(framework=framework, llm_response="Comparison reflection from AI").exists()
+        assert LLMReflectionLog.objects.filter(
+            framework=framework, llm_response="Comparison reflection from AI"
+        ).exists()
 
         # Another comparison (different selected IDs) does NOT consume this reflection
-        resp_other = client.get(f"/decisions/compare/{framework.id}/?type=objectives&selected={objective.id}")
+        resp_other = client.get(
+            f"/decisions/compare/{framework.id}/?type=objectives&selected={objective.id}"
+        )
         assert resp_other.status_code == 200
         assert resp_other.context.get("comparison_reflection") is None
 
         # The matching comparison consumes the reflection
-        resp_matching = client.get(f"/decisions/compare/{framework.id}/?type=objectives&selected={objective.id}&selected={obj2.id}")
+        resp_matching = client.get(
+            f"/decisions/compare/{framework.id}/?type=objectives&selected={objective.id}&selected={obj2.id}"
+        )
         assert resp_matching.status_code == 200
         assert resp_matching.context["comparison_reflection"] == "Comparison reflection from AI"
 
         # Subsequent visit to matching comparison no longer has the reflection
-        resp_consumed = client.get(f"/decisions/compare/{framework.id}/?type=objectives&selected={objective.id}&selected={obj2.id}")
+        resp_consumed = client.get(
+            f"/decisions/compare/{framework.id}/?type=objectives&selected={objective.id}&selected={obj2.id}"
+        )
         assert resp_consumed.context.get("comparison_reflection") is None
 
     # POST action=convert_to_decision with type=goals in request body (without query param)
-    resp_convert_goal = client.post(f"/decisions/compare/{framework.id}/", {
-        "action": "convert_to_decision",
-        "type": "goals",
-        "selected": [str(goal.id), str(goal2.id)],
-    })
+    resp_convert_goal = client.post(
+        f"/decisions/compare/{framework.id}/",
+        {
+            "action": "convert_to_decision",
+            "type": "goals",
+            "selected": [str(goal.id), str(goal2.id)],
+        },
+    )
     assert resp_convert_goal.status_code == 302
-    assert DecisionRecord.objects.filter(framework=framework, supporting_objectives=objective).exists()
+    assert DecisionRecord.objects.filter(
+        framework=framework, supporting_objectives=objective
+    ).exists()
 
 
 def test_llm_test_connection_endpoint(client, user):
@@ -936,21 +1094,32 @@ def test_llm_test_connection_endpoint(client, user):
     config.save()
 
     # 3. Successful test
-    with patch("llm.service.generate_reflection", return_value=(True, "PrioritySuite thinking partner connection verified.")):
+    with patch(
+        "llm.service.generate_reflection",
+        return_value=(True, "PrioritySuite thinking partner connection verified."),
+    ):
         resp_ok = client.post("/accounts/settings/test-llm/")
         assert resp_ok.status_code == 302
         assert resp_ok.url == "/accounts/settings/"
 
     # 4. Connection error test and log credential sanitization
-    with patch("llm.service.generate_reflection", return_value=(False, "Connection refused with key sk-secret-leak and user:secretpass")), \
-         patch("accounts.views.logger.warning") as mock_log_warn:
-        resp_err = client.post("/accounts/settings/test-llm/", {
-            "provider": "openrouter",
-            "model_name": "openrouter/anthropic/claude-3.5-sonnet",
-            "api_base": "https://user:secretpass@openrouter.ai/api/v1",
-            "raw_api_key": "sk-secret-leak",
-            "consent_given": "on",
-        })
+    with (
+        patch(
+            "llm.service.generate_reflection",
+            return_value=(False, "Connection refused with key sk-secret-leak and user:secretpass"),
+        ),
+        patch("accounts.views.logger.warning") as mock_log_warn,
+    ):
+        resp_err = client.post(
+            "/accounts/settings/test-llm/",
+            {
+                "provider": "openrouter",
+                "model_name": "openrouter/anthropic/claude-3.5-sonnet",
+                "api_base": "https://user:secretpass@openrouter.ai/api/v1",
+                "raw_api_key": "sk-secret-leak",
+                "consent_given": "on",
+            },
+        )
         assert resp_err.status_code == 302
         assert resp_err.url == "/accounts/settings/"
         assert mock_log_warn.called
@@ -963,25 +1132,33 @@ def test_llm_test_connection_endpoint(client, user):
         assert "secretpass" not in logged_resp
 
     # 5. Testing unsaved form POST values (e.g. changing provider/key in form before clicking Test)
-    with patch("llm.service.generate_reflection", return_value=(True, "Verified unsaved settings")) as mock_test_gen:
-        resp_unsaved = client.post("/accounts/settings/test-llm/", {
-            "provider": "openrouter",
-            "model_name": "openrouter/anthropic/claude-3.5-sonnet",
-            "api_base": "https://openrouter.ai/api/v1",
-            "consent_given": "on",
-            "raw_api_key": "sk-new-key",
-        })
+    with patch(
+        "llm.service.generate_reflection", return_value=(True, "Verified unsaved settings")
+    ) as mock_test_gen:
+        resp_unsaved = client.post(
+            "/accounts/settings/test-llm/",
+            {
+                "provider": "openrouter",
+                "model_name": "openrouter/anthropic/claude-3.5-sonnet",
+                "api_base": "https://openrouter.ai/api/v1",
+                "consent_given": "on",
+                "raw_api_key": "sk-new-key",
+            },
+        )
         assert resp_unsaved.status_code == 302
         assert mock_test_gen.called
         assert mock_test_gen.call_args[1]["provider"] == "openrouter"
         assert mock_test_gen.call_args[1]["api_key"] == "sk-new-key"
 
     # 6. Reject unknown / invalid provider in POST
-    resp_invalid_prov = client.post("/accounts/settings/test-llm/", {
-        "provider": "malicious_unsupported_provider",
-        "model_name": "test-model",
-        "consent_given": "on",
-    })
+    resp_invalid_prov = client.post(
+        "/accounts/settings/test-llm/",
+        {
+            "provider": "malicious_unsupported_provider",
+            "model_name": "test-model",
+            "consent_given": "on",
+        },
+    )
     assert resp_invalid_prov.status_code == 302
     assert resp_invalid_prov.url == "/accounts/settings/"
 
@@ -991,24 +1168,30 @@ def test_llm_test_connection_endpoint(client, user):
     config.save()
 
     with patch("llm.service.generate_reflection", return_value=(True, "OK")) as mock_test_gen2:
-        client.post("/accounts/settings/test-llm/", {
-            "provider": "anthropic",
-            "model_name": "claude-3-haiku",
-            "consent_given": "on",
-            "raw_api_key": "",
-        })
+        client.post(
+            "/accounts/settings/test-llm/",
+            {
+                "provider": "anthropic",
+                "model_name": "claude-3-haiku",
+                "consent_given": "on",
+                "raw_api_key": "",
+            },
+        )
         assert mock_test_gen2.called
         assert mock_test_gen2.call_args[1]["api_key"] == ""
 
     # Settings save clears previous provider's key when provider changes without a new key
-    client.post("/accounts/settings/", {
-        "provider": "anthropic",
-        "model_name": "claude-3-haiku",
-        "api_base": "",
-        "consent_given": "on",
-        "theme_preference": "auto",
-        "raw_api_key": "",
-    })
+    client.post(
+        "/accounts/settings/",
+        {
+            "provider": "anthropic",
+            "model_name": "claude-3-haiku",
+            "api_base": "",
+            "consent_given": "on",
+            "theme_preference": "auto",
+            "raw_api_key": "",
+        },
+    )
     config.refresh_from_db()
     assert config.provider == "anthropic"
     assert config.api_key == ""
@@ -1016,18 +1199,19 @@ def test_llm_test_connection_endpoint(client, user):
 
 def test_selective_markdown_export_builder(client, user, framework, domain, objective, goal):
     from frameworks.models import Domain
+
     domain2 = Domain.objects.create(framework=framework, name="Finance", display_order=2)
     dec = DecisionRecord.objects.create(
         framework=framework,
         title="Selective Export Decision",
-        proposal_description="Test selective export"
+        proposal_description="Test selective export",
     )
     LLMReflectionLog.objects.create(
         framework=framework,
         user_prompt="Test prompt",
         context_snapshot="Test snapshot",
         llm_response="Test reflection response",
-        provider_used="mock-model"
+        provider_used="mock-model",
     )
 
     client.force_login(user)
@@ -1085,15 +1269,20 @@ def test_llm_chat_context_and_history(client, user, framework, domain, objective
         user_prompt="Prior message",
         context_snapshot="Prior context",
         llm_response="Prior AI answer",
-        provider_used="llama3:latest"
+        provider_used="llama3:latest",
     )
 
-    with patch("llm.views.generate_reflection", return_value=(True, "Guided advice on tradeoffs")) as mock_gen:
-        resp = client.post(f"/llm/framework/{framework.id}/chat/", {
-            "prompt": "How do I choose between these? Focus on trade-offs.",
-            "selected_domains": [str(domain.id)],
-            "include_history": "1"
-        })
+    with patch(
+        "llm.views.generate_reflection", return_value=(True, "Guided advice on tradeoffs")
+    ) as mock_gen:
+        resp = client.post(
+            f"/llm/framework/{framework.id}/chat/",
+            {
+                "prompt": "How do I choose between these? Focus on trade-offs.",
+                "selected_domains": [str(domain.id)],
+                "include_history": "1",
+            },
+        )
         assert resp.status_code == 302
         assert mock_gen.called
         history_passed = mock_gen.call_args[1]["history"]
@@ -1102,14 +1291,21 @@ def test_llm_chat_context_and_history(client, user, framework, domain, objective
         assert "Prior context" not in history_passed[0]["content"]
 
         # Reflection log was created
-        assert LLMReflectionLog.objects.filter(framework=framework, llm_response="Guided advice on tradeoffs").exists()
+        assert LLMReflectionLog.objects.filter(
+            framework=framework, llm_response="Guided advice on tradeoffs"
+        ).exists()
 
     # All domains unchecked (context filter active with 0 domains selected)
-    with patch("llm.views.generate_reflection", return_value=(True, "Response without domains")) as mock_no_dom:
-        resp_no_dom = client.post(f"/llm/framework/{framework.id}/chat/", {
-            "prompt": "Evaluate general principles",
-            "context_filter_active": "1",
-        })
+    with patch(
+        "llm.views.generate_reflection", return_value=(True, "Response without domains")
+    ) as mock_no_dom:
+        resp_no_dom = client.post(
+            f"/llm/framework/{framework.id}/chat/",
+            {
+                "prompt": "Evaluate general principles",
+                "context_filter_active": "1",
+            },
+        )
         assert resp_no_dom.status_code == 302
         context_passed = mock_no_dom.call_args[1]["user_context_markdown"]
         assert "## Domain: Work & Vocation" not in context_passed
@@ -1127,7 +1323,7 @@ def test_llm_reflection_deletion(client, user, other_user, framework):
         user_prompt="Delete me",
         context_snapshot="Snapshot",
         llm_response="Will be deleted",
-        provider_used="test"
+        provider_used="test",
     )
 
     # Other user cannot delete
@@ -1148,7 +1344,7 @@ def test_llm_reflection_deletion(client, user, other_user, framework):
         user_prompt="Keep me",
         context_snapshot="Snapshot",
         llm_response="Keep",
-        provider_used="test"
+        provider_used="test",
     )
     assert client.get(f"/llm/reflection/{ref2.id}/delete/").status_code == 403
 
@@ -1159,10 +1355,21 @@ def test_llm_api_base_validation():
     from accounts.forms import validate_llm_api_base
 
     # Allowed providers with valid endpoints
-    assert validate_llm_api_base("openai", "https://api.openai.com/v1") == "https://api.openai.com/v1"
-    assert validate_llm_api_base("anthropic", "https://api.anthropic.com/v1") == "https://api.anthropic.com/v1"
-    assert validate_llm_api_base("gemini", "https://generativelanguage.googleapis.com") == "https://generativelanguage.googleapis.com"
-    assert validate_llm_api_base("openrouter", "https://openrouter.ai/api/v1") == "https://openrouter.ai/api/v1"
+    assert (
+        validate_llm_api_base("openai", "https://api.openai.com/v1") == "https://api.openai.com/v1"
+    )
+    assert (
+        validate_llm_api_base("anthropic", "https://api.anthropic.com/v1")
+        == "https://api.anthropic.com/v1"
+    )
+    assert (
+        validate_llm_api_base("gemini", "https://generativelanguage.googleapis.com")
+        == "https://generativelanguage.googleapis.com"
+    )
+    assert (
+        validate_llm_api_base("openrouter", "https://openrouter.ai/api/v1")
+        == "https://openrouter.ai/api/v1"
+    )
     assert validate_llm_api_base("none", "http://any-endpoint.com") == "http://any-endpoint.com"
 
     # In production without allowlist, empty ollama endpoint is rejected
@@ -1171,6 +1378,7 @@ def test_llm_api_base_validation():
 
     # When localhost is explicitly allowlisted
     from django.conf import settings
+
     with patch.object(settings, "OLLAMA_ALLOWED_HOSTS", ["localhost"]):
         assert validate_llm_api_base("ollama", "") == ""
 
@@ -1187,7 +1395,9 @@ def test_llm_api_base_validation():
     # Invalid hostnames for strict cloud providers
     with pytest.raises(ValidationError, match="OpenAI API Base must point to api.openai.com"):
         validate_llm_api_base("openai", "https://evil-openai.com/v1")
-    with pytest.raises(ValidationError, match="Anthropic API Base must point to api.anthropic.com"):
+    with pytest.raises(
+        ValidationError, match="Anthropic API Base must point to api.anthropic.com"
+    ):
         validate_llm_api_base("anthropic", "https://evil-anthropic.com/v1")
     with pytest.raises(ValidationError, match="Google Gemini API Base must point to"):
         validate_llm_api_base("gemini", "https://evil-gemini.com/v1")
@@ -1210,13 +1420,29 @@ def test_llm_api_base_validation():
 
     # Remote Ollama endpoint with an API key requires HTTPS
     with patch("accounts.forms.is_safe_ollama_endpoint", return_value=True):
-        with pytest.raises(ValidationError, match="Ollama remote API base URL must use HTTPS when an API key is configured"):
-            validate_llm_api_base("ollama", "http://remote-ollama.example.com:11434/v1", api_key="ollama-secret-key")
+        with pytest.raises(
+            ValidationError,
+            match="Ollama remote API base URL must use HTTPS when an API key is configured",
+        ):
+            validate_llm_api_base(
+                "ollama", "http://remote-ollama.example.com:11434/v1", api_key="ollama-secret-key"
+            )
         # Local Ollama with an API key is permitted over HTTP
-        assert validate_llm_api_base("ollama", "http://localhost:11434/v1", api_key="local-key") == "http://localhost:11434/v1"
-        assert validate_llm_api_base("ollama", "http://127.0.0.1:11434/v1", api_key="local-key") == "http://127.0.0.1:11434/v1"
+        assert (
+            validate_llm_api_base("ollama", "http://localhost:11434/v1", api_key="local-key")
+            == "http://localhost:11434/v1"
+        )
+        assert (
+            validate_llm_api_base("ollama", "http://127.0.0.1:11434/v1", api_key="local-key")
+            == "http://127.0.0.1:11434/v1"
+        )
         # Remote Ollama with HTTPS and API key is permitted
-        assert validate_llm_api_base("ollama", "https://remote-ollama.example.com:11434/v1", api_key="ollama-secret-key") == "https://remote-ollama.example.com:11434/v1"
+        assert (
+            validate_llm_api_base(
+                "ollama", "https://remote-ollama.example.com:11434/v1", api_key="ollama-secret-key"
+            )
+            == "https://remote-ollama.example.com:11434/v1"
+        )
 
 
 def test_coverage_boosters(user, other_user, framework, domain, why, objective):
@@ -1239,18 +1465,24 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
     assert is_safe_ollama_endpoint("invalid.host.that.does.not.exist") is False
 
     import socket
-    with patch("socket.getaddrinfo", return_value=[(socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("::1", 0, 0, 0))]):
+
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("::1", 0, 0, 0))],
+    ):
         assert is_safe_ollama_endpoint("malicious-ipv6.internal") is False
 
     # 2. String representations
-    dec = DecisionRecord.objects.create(framework=framework, title="Str Test", proposal_description="Desc")
+    dec = DecisionRecord.objects.create(
+        framework=framework, title="Str Test", proposal_description="Desc"
+    )
     assert "Str Test" in str(dec)
     ref = LLMReflectionLog.objects.create(
         framework=framework,
         user_prompt="P",
         context_snapshot="C",
         llm_response="R",
-        provider_used="test"
+        provider_used="test",
     )
     assert "Reflection" in str(ref)
 
@@ -1260,29 +1492,57 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
     mock_choice.message.content = "OK"
     mock_resp.choices = [mock_choice]
 
-    with patch("litellm.completion", return_value=mock_resp) as mock_litellm, \
-         patch("accounts.forms.is_safe_ollama_endpoint", return_value=True):
-        assert generate_reflection("ctx", "prompt", "custom", "my-vllm", api_base="http://localhost:8000")[0] is True
+    with (
+        patch("litellm.completion", return_value=mock_resp) as mock_litellm,
+        patch("accounts.forms.is_safe_ollama_endpoint", return_value=True),
+    ):
+        assert (
+            generate_reflection(
+                "ctx", "prompt", "custom", "my-vllm", api_base="http://localhost:8000"
+            )[0]
+            is True
+        )
         assert generate_reflection("ctx", "prompt", "gemini", "gemini-1.5-flash")[0] is True
         assert generate_reflection("ctx", "prompt", "anthropic", "claude-3-haiku")[0] is True
         assert generate_reflection("ctx", "prompt", "openai", "gpt-4o")[0] is True
 
         # Custom model containing slashes (e.g. meta-llama/Llama-3-8B-Instruct) gets openai/ prefix
-        generate_reflection("ctx", "prompt", "custom", "meta-llama/Llama-3-8B-Instruct", api_base="http://localhost:8000")
+        generate_reflection(
+            "ctx",
+            "prompt",
+            "custom",
+            "meta-llama/Llama-3-8B-Instruct",
+            api_base="http://localhost:8000",
+        )
         assert mock_litellm.call_args[1]["model"] == "openai/meta-llama/Llama-3-8B-Instruct"
 
         # Verify history is placed before current prompt
-        generate_reflection("ctx", "latest query", "ollama", "llama3", history=[{"role": "user", "content": "prior turn"}])
+        generate_reflection(
+            "ctx",
+            "latest query",
+            "ollama",
+            "llama3",
+            history=[{"role": "user", "content": "prior turn"}],
+        )
         sent_messages = mock_litellm.call_args[1]["messages"]
         assert sent_messages[0]["role"] == "system"
         assert sent_messages[1]["content"] == "prior turn"
         assert "latest query" in sent_messages[2]["content"]
 
     # DNS rebinding protection: destination resolving to private IP is blocked
-    with patch("accounts.forms.validate_llm_api_base", return_value="https://rebind.attacker.com/v1"), \
-         patch("socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443))]), \
-         patch("accounts.forms.is_safe_ollama_endpoint", side_effect=lambda ip: ip != "10.0.0.1"):
-        success, msg = generate_reflection("ctx", "prompt", "custom", "model", api_base="https://rebind.attacker.com/v1")
+    with (
+        patch(
+            "accounts.forms.validate_llm_api_base", return_value="https://rebind.attacker.com/v1"
+        ),
+        patch(
+            "socket.getaddrinfo",
+            return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443))],
+        ),
+        patch("accounts.forms.is_safe_ollama_endpoint", side_effect=lambda ip: ip != "10.0.0.1"),
+    ):
+        success, msg = generate_reflection(
+            "ctx", "prompt", "custom", "model", api_base="https://rebind.attacker.com/v1"
+        )
         assert success is False
         assert "destination 10.0.0.1 is private or restricted" in msg
 
@@ -1290,16 +1550,24 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
     assert generate_reflection("ctx", "prompt", "none", "any")[0] is False
 
     # Invalid API base URL
-    assert generate_reflection("ctx", "prompt", "openai", "gpt-4o", api_base="http://api.openai.com/v1")[0] is False
+    assert (
+        generate_reflection(
+            "ctx", "prompt", "openai", "gpt-4o", api_base="http://api.openai.com/v1"
+        )[0]
+        is False
+    )
 
     # LiteLLM exception handling and Ollama client session isolation
     sentinel_session = object()
     import litellm
+
     litellm.client_session = sentinel_session
     mock_resp = MagicMock()
     mock_resp.choices = [MagicMock(message=MagicMock(content="Ollama reflection"))]
-    with patch("litellm.completion", return_value=mock_resp) as mock_comp, \
-         patch("accounts.forms.is_safe_ollama_endpoint", return_value=True):
+    with (
+        patch("litellm.completion", return_value=mock_resp) as mock_comp,
+        patch("accounts.forms.is_safe_ollama_endpoint", return_value=True),
+    ):
         ok, res = generate_reflection("ctx", "prompt", "ollama", "llama3")
         assert ok is True
         assert res == "Ollama reflection"
@@ -1312,8 +1580,10 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
         assert hasattr(call_kwargs["client"], "chat")
     litellm.client_session = None
 
-    with patch("litellm.completion", side_effect=RuntimeError("API down")), \
-         patch("accounts.forms.is_safe_ollama_endpoint", return_value=True):
+    with (
+        patch("litellm.completion", side_effect=RuntimeError("API down")),
+        patch("accounts.forms.is_safe_ollama_endpoint", return_value=True),
+    ):
         ok, err = generate_reflection("ctx", "prompt", "ollama", "llama3")
         assert ok is False
         assert "API down" in err
@@ -1342,13 +1612,19 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
     assert fw_field.queryset.filter(owner=other_user).count() == 0
     assert fw_field.queryset.filter(owner=user).count() >= 1
 
-    dom_field = dec_admin.formfield_for_manytomany(DecisionRecord._meta.get_field("affected_domains"), req)
+    dom_field = dec_admin.formfield_for_manytomany(
+        DecisionRecord._meta.get_field("affected_domains"), req
+    )
     assert dom_field.queryset.filter(framework__owner=other_user).count() == 0
 
-    why_field = dec_admin.formfield_for_manytomany(DecisionRecord._meta.get_field("relevant_whys"), req)
+    why_field = dec_admin.formfield_for_manytomany(
+        DecisionRecord._meta.get_field("relevant_whys"), req
+    )
     assert why_field.queryset.filter(domain__framework__owner=other_user).count() == 0
 
-    obj_field = dec_admin.formfield_for_manytomany(DecisionRecord._meta.get_field("supporting_objectives"), req)
+    obj_field = dec_admin.formfield_for_manytomany(
+        DecisionRecord._meta.get_field("supporting_objectives"), req
+    )
     assert obj_field.queryset.filter(primary_domain__framework__owner=other_user).count() == 0
 
     ref_admin = LLMReflectionLogAdmin(LLMReflectionLog, site)
@@ -1364,17 +1640,22 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
     assert ref_admin.has_delete_permission(req, ref) is True
 
     req.user.is_superuser = False
-    ref_fw_field = ref_admin.formfield_for_foreignkey(LLMReflectionLog._meta.get_field("framework"), req)
+    ref_fw_field = ref_admin.formfield_for_foreignkey(
+        LLMReflectionLog._meta.get_field("framework"), req
+    )
     assert ref_fw_field.queryset.filter(owner=other_user).count() == 0
     assert ref_fw_field.queryset.filter(owner=user).count() >= 1
 
-    ref_dec_field = ref_admin.formfield_for_foreignkey(LLMReflectionLog._meta.get_field("decision"), req)
+    ref_dec_field = ref_admin.formfield_for_foreignkey(
+        LLMReflectionLog._meta.get_field("decision"), req
+    )
     assert ref_dec_field.queryset.filter(framework__owner=other_user).count() == 0
 
     # 5. SSRFSafeTransport, IP pinning, and redirect prevention
     import httpx
 
     from llm.service import SSRFSafeTransport
+
     transport = SSRFSafeTransport(allowlist=[])
     with pytest.raises(ValueError, match="Outbound connection blocked"):
         req = httpx.Request("GET", "http://169.254.169.254/latest/meta-data/")
@@ -1385,18 +1666,24 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
     client_test = httpx.Client(transport=transport, follow_redirects=False)
     assert client_test.follow_redirects is False
 
-    # IP pinning test: request.url is rewritten to the safe IP with Host header preserved (including non-default port)
+    # IP pinning test: request.url is rewritten to safe IP with Host preserved (non-default port)
     req_pin = httpx.Request("GET", "http://localhost:8000/v1/models")
-    with patch("socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 8000))]):
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 8000))],
+    ):
         transport_pin = SSRFSafeTransport(allowlist=["localhost"])
         with patch.object(httpx.HTTPTransport, "handle_request", return_value=MagicMock()):
             transport_pin.handle_request(req_pin)
             assert req_pin.url.host == "127.0.0.1"
             assert req_pin.headers["Host"] == "localhost:8000"
 
-    # HTTPS IP pinning test: sni_hostname is set without port for TLS SNI validation, Host preserves non-default port
+    # HTTPS IP pinning test: sni_hostname is set without port, Host preserves non-default port
     req_ssl = httpx.Request("GET", "https://localhost:8443/v1/models")
-    with patch("socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 8443))]):
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 8443))],
+    ):
         transport_pin = SSRFSafeTransport(allowlist=["localhost"])
         with patch.object(httpx.HTTPTransport, "handle_request", return_value=MagicMock()):
             transport_pin.handle_request(req_ssl)
@@ -1406,7 +1693,10 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
 
     # Default port test: port 80/443 is omitted from Host header
     req_def = httpx.Request("GET", "http://localhost:80/v1/models")
-    with patch("socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 80))]):
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 80))],
+    ):
         transport_pin = SSRFSafeTransport(allowlist=["localhost"])
         with patch.object(httpx.HTTPTransport, "handle_request", return_value=MagicMock()):
             transport_pin.handle_request(req_def)
@@ -1414,12 +1704,16 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
 
     # 6. Settings cookie types
     from django.conf import settings
+
     assert isinstance(settings.SESSION_COOKIE_SECURE, bool)
     assert isinstance(settings.CSRF_COOKIE_SECURE, bool)
 
 
-def test_compare_view_security_and_edge_cases(client, user, other_user, framework, objective, goal):
+def test_compare_view_security_and_edge_cases(
+    client, user, other_user, framework, objective, goal
+):
     from frameworks.models import Domain, Framework, Objective
+
     client.force_login(user)
 
     # 1. Cross-user isolation: accessing another user's framework returns 404
@@ -1430,36 +1724,51 @@ def test_compare_view_security_and_edge_cases(client, user, other_user, framewor
     # 2. Foreign selected IDs: foreign objective ID in selected is excluded from items
     other_dom = Domain.objects.create(framework=other_fw, name="Other Domain")
     other_obj = Objective.objects.create(primary_domain=other_dom, title="Foreign Obj")
-    resp_foreign = client.get(f"/decisions/compare/{framework.id}/?type=objectives&selected={objective.id}&selected={other_obj.id}")
+    resp_foreign = client.get(
+        f"/decisions/compare/{framework.id}/?type=objectives&selected={objective.id}&selected={other_obj.id}"
+    )
     assert resp_foreign.status_code == 200
     assert objective in resp_foreign.context["items"]
     assert other_obj not in resp_foreign.context["items"]
 
     # 3. Invalid compare_type falls back to "objectives"
-    resp_invalid_type = client.get(f"/decisions/compare/{framework.id}/?type=malicious_type&selected={objective.id}")
+    resp_invalid_type = client.get(
+        f"/decisions/compare/{framework.id}/?type=malicious_type&selected={objective.id}"
+    )
     assert resp_invalid_type.status_code == 200
     assert resp_invalid_type.context["compare_type"] == "objectives"
 
     # 4. POST vs GET selected precedence: POST body overrides query string with distinct IDs
-    obj_post = Objective.objects.create(primary_domain=objective.primary_domain, title="POST Selected Only")
-    resp_precedence = client.post(f"/decisions/compare/{framework.id}/?selected={objective.id}", {
-        "action": "convert_to_decision",
-        "type": "objectives",
-        "selected": [str(obj_post.id)],
-    })
+    obj_post = Objective.objects.create(
+        primary_domain=objective.primary_domain, title="POST Selected Only"
+    )
+    resp_precedence = client.post(
+        f"/decisions/compare/{framework.id}/?selected={objective.id}",
+        {
+            "action": "convert_to_decision",
+            "type": "objectives",
+            "selected": [str(obj_post.id)],
+        },
+    )
     assert resp_precedence.status_code == 302
-    created_dec = DecisionRecord.objects.filter(framework=framework, title__contains="POST Selected Only").first()
+    created_dec = DecisionRecord.objects.filter(
+        framework=framework, title__contains="POST Selected Only"
+    ).first()
     assert created_dec is not None
     assert obj_post in created_dec.supporting_objectives.all()
     assert objective not in created_dec.supporting_objectives.all()
 
-    # 5. Empty selection handling: POST with empty selected shows warning and does not create DecisionRecord
+    # 5. Empty selection: POST with empty selected shows warning, no DecisionRecord created
     initial_count = DecisionRecord.objects.filter(framework=framework).count()
-    resp_empty = client.post(f"/decisions/compare/{framework.id}/", {
-        "action": "convert_to_decision",
-        "type": "objectives",
-        "selected": [],
-    }, follow=True)
+    resp_empty = client.post(
+        f"/decisions/compare/{framework.id}/",
+        {
+            "action": "convert_to_decision",
+            "type": "objectives",
+            "selected": [],
+        },
+        follow=True,
+    )
     assert resp_empty.status_code == 200
     assert DecisionRecord.objects.filter(framework=framework).count() == initial_count
     messages = list(resp_empty.context["messages"])
@@ -1467,11 +1776,15 @@ def test_compare_view_security_and_edge_cases(client, user, other_user, framewor
 
     # 6. Empty selection on reflection does not call LLM
     with patch("decisions.views.generate_reflection") as mock_gen:
-        resp_empty_reflect = client.post(f"/decisions/compare/{framework.id}/", {
-            "action": "reflect",
-            "type": "objectives",
-            "selected": [],
-        }, follow=True)
+        resp_empty_reflect = client.post(
+            f"/decisions/compare/{framework.id}/",
+            {
+                "action": "reflect",
+                "type": "objectives",
+                "selected": [],
+            },
+            follow=True,
+        )
         assert resp_empty_reflect.status_code == 200
         assert not mock_gen.called
 
@@ -1511,14 +1824,21 @@ def test_chat_view_selected_decisions_filtering(client, user, framework):
     cfg.model_name = "llama3.1"
     cfg.save()
 
-    dec1 = DecisionRecord.objects.create(framework=framework, title="Decision Alpha", proposal_description="Alpha desc")
-    DecisionRecord.objects.create(framework=framework, title="Decision Beta", proposal_description="Beta desc")
+    dec1 = DecisionRecord.objects.create(
+        framework=framework, title="Decision Alpha", proposal_description="Alpha desc"
+    )
+    DecisionRecord.objects.create(
+        framework=framework, title="Decision Beta", proposal_description="Beta desc"
+    )
 
     with patch("llm.views.generate_reflection", return_value=(True, "Chat response")) as mock_gen:
-        resp = client.post(f"/llm/framework/{framework.id}/chat/", {
-            "prompt": "How does Alpha fit?",
-            "selected_decisions": [str(dec1.id)],
-        })
+        resp = client.post(
+            f"/llm/framework/{framework.id}/chat/",
+            {
+                "prompt": "How does Alpha fit?",
+                "selected_decisions": [str(dec1.id)],
+            },
+        )
         assert resp.status_code == 302
         assert mock_gen.called
         ctx = mock_gen.call_args[1]["user_context_markdown"]
@@ -1536,26 +1856,33 @@ def test_test_llm_connection_key_isolation_on_api_base_change(client, user):
     cfg.api_key = "super-secret-key-12345"
     cfg.save()
 
-    # Changing api_base without supplying api_key in POST does NOT reuse stored key (prevents exfiltration)
+    # Changing api_base without api_key in POST does NOT reuse stored key (prevents exfiltration)
     with patch("llm.service.generate_reflection") as mock_gen:
         mock_gen.return_value = (True, "Connection OK")
-        with patch("accounts.forms.validate_llm_api_base", return_value="https://attacker-server.com/v1"):
-            resp = client.post("/accounts/settings/test-llm/", {
-                "provider": "custom",
-                "model_name": "custom-model",
-                "api_base": "https://attacker-server.com/v1",
-                "api_key": "",
-                "consent_given": True,
-            })
+        with patch(
+            "accounts.forms.validate_llm_api_base", return_value="https://attacker-server.com/v1"
+        ):
+            resp = client.post(
+                "/accounts/settings/test-llm/",
+                {
+                    "provider": "custom",
+                    "model_name": "custom-model",
+                    "api_base": "https://attacker-server.com/v1",
+                    "api_key": "",
+                    "consent_given": True,
+                },
+            )
             assert resp.status_code == 302
             assert mock_gen.called
-            # The key sent to generate_reflection must be None or empty, NOT super-secret-key-12345!
+            # Key sent to generate_reflection must be None/empty, NOT super-secret-key-12345!
             assert mock_gen.call_args[1]["api_key"] in (None, "")
 
 
 def test_reflection_delete_redirects_to_decision_detail_when_set(client, user, framework):
     client.force_login(user)
-    dec = DecisionRecord.objects.create(framework=framework, title="Delete Ref Test", proposal_description="Desc")
+    dec = DecisionRecord.objects.create(
+        framework=framework, title="Delete Ref Test", proposal_description="Desc"
+    )
     ref = LLMReflectionLog.objects.create(
         framework=framework,
         decision=dec,
@@ -1581,15 +1908,20 @@ def test_settings_view_clears_api_key_when_api_base_changes(client, user):
     cfg.save()
 
     # Changing api_base without providing a raw_api_key clears api_key
-    with patch("accounts.forms.validate_llm_api_base", return_value="https://new-server.internal/v1"):
-        resp = client.post("/accounts/settings/", {
-            "provider": "custom",
-            "model_name": "custom-model",
-            "api_base": "https://new-server.internal/v1",
-            "raw_api_key": "",
-            "consent_given": True,
-            "theme_preference": "auto",
-        })
+    with patch(
+        "accounts.forms.validate_llm_api_base", return_value="https://new-server.internal/v1"
+    ):
+        resp = client.post(
+            "/accounts/settings/",
+            {
+                "provider": "custom",
+                "model_name": "custom-model",
+                "api_base": "https://new-server.internal/v1",
+                "raw_api_key": "",
+                "consent_given": True,
+                "theme_preference": "auto",
+            },
+        )
         assert resp.status_code == 302
         cfg.refresh_from_db()
         assert cfg.api_base == "https://new-server.internal/v1"
@@ -1648,7 +1980,9 @@ def test_user_llm_config_form_retained_api_key_validation(user):
         )
         assert not form.is_valid()
         assert "api_base" in form.errors
-        assert "Ollama remote API base URL must use HTTPS when an API key is configured" in str(form.errors["api_base"])
+        assert "Ollama remote API base URL must use HTTPS when an API key is configured" in str(
+            form.errors["api_base"]
+        )
 
     # Case 2: Changing api_base with blank raw_api_key does NOT retain the old key.
     # Remote HTTP Ollama without an API key is permitted.
@@ -1666,7 +2000,7 @@ def test_user_llm_config_form_retained_api_key_validation(user):
         )
         assert form2.is_valid(), form2.errors
 
-    # Case 3: Changing provider with blank raw_api_key does not retain the saved key across providers.
+    # Case 3: Changing provider with blank raw_api_key does not retain saved key across providers.
     # Start with provider "none", a saved key, and a remote HTTP Ollama base.
     cfg.provider = "none"
     cfg.model_name = "none"
@@ -1674,8 +2008,8 @@ def test_user_llm_config_form_retained_api_key_validation(user):
     cfg.api_key = "secret-ollama-key"
     cfg.save()
 
-    # Submitting provider "ollama" with the same remote HTTP base and a blank raw_api_key must be valid,
-    # ensuring clean does not reuse the saved key across different providers (which would fail validation
+    # Submitting provider "ollama" with same remote HTTP base and blank raw_api_key must be valid,
+    # ensuring clean does not reuse the saved key across providers (which would fail validation
     # because remote HTTP Ollama with an API key is prohibited).
     with patch("accounts.forms.is_safe_ollama_endpoint", return_value=True):
         form3 = UserLLMConfigForm(
@@ -1690,10 +2024,3 @@ def test_user_llm_config_form_retained_api_key_validation(user):
             instance=cfg,
         )
         assert form3.is_valid(), form3.errors
-
-
-
-
-
-
-

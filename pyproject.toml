@@ -44,6 +44,7 @@ warn_unused_ignores = true
 
 [tool.ruff]
 target-version = "py312"
+line-length = 99
 exclude = [
     ".git",
     ".venv",
@@ -53,6 +54,7 @@ exclude = [
 ]
 
 [tool.ruff.lint]
+extend-select = ["E", "W"]
 ignore = [
     "RUF012",  # Mutable class attributes (standard pattern in Django Model / ModelForm Meta)
 ]

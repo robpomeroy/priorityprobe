@@ -13,13 +13,17 @@ from llm.service import GUIDED_MODES, generate_reflection
 def chat_view(request, framework_id):
     framework = get_object_or_404(Framework, id=framework_id, owner=request.user)
     llm_config = getattr(request.user, "llm_config", None)
-    reflections = LLMReflectionLog.objects.filter(framework=framework, decision__isnull=True).order_by("-created_at")
+    reflections = LLMReflectionLog.objects.filter(
+        framework=framework, decision__isnull=True
+    ).order_by("-created_at")
     all_domains = framework.domains.all()
     all_decisions = DecisionRecord.objects.filter(framework=framework)
 
     if request.method == "POST":
         if not llm_config or not llm_config.consent_given:
-            messages.error(request, "Please grant consent in LLM Settings before querying external providers.")
+            messages.error(
+                request, "Please grant consent in LLM Settings before querying external providers."
+            )
             return redirect("accounts:settings")
 
         user_prompt = request.POST.get("prompt", "")
@@ -28,7 +32,9 @@ def chat_view(request, framework_id):
             return redirect("llm:chat", framework_id=framework.id)
 
         # User-selected context filters
-        domains_filter_active = "context_filter_active" in request.POST or "selected_domains" in request.POST
+        domains_filter_active = (
+            "context_filter_active" in request.POST or "selected_domains" in request.POST
+        )
         selected_domain_raw = request.POST.getlist("selected_domains")
         include_history = request.POST.get("include_history") == "1"
 
@@ -89,15 +95,20 @@ def chat_view(request, framework_id):
     # Initial preview of full context
     preview_context_md = generate_framework_markdown(framework, include_instructions=True)
 
-    return render(request, "llm/chat.html", {
-        "framework": framework,
-        "llm_config": llm_config,
-        "reflections": reflections,
-        "all_domains": all_domains,
-        "all_decisions": all_decisions,
-        "guided_modes": GUIDED_MODES,
-        "preview_context_md": preview_context_md,
-    })
+    return render(
+        request,
+        "llm/chat.html",
+        {
+            "framework": framework,
+            "llm_config": llm_config,
+            "reflections": reflections,
+            "all_domains": all_domains,
+            "all_decisions": all_decisions,
+            "guided_modes": GUIDED_MODES,
+            "preview_context_md": preview_context_md,
+        },
+    )
+
 
 @login_required
 def reflection_delete_view(request, reflection_id):

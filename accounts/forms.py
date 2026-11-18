@@ -12,6 +12,7 @@ from accounts.models import UserLLMConfig
 
 ALLOWED_PROVIDERS = {"ollama", "openrouter", "openai", "anthropic", "gemini", "custom", "none"}
 
+
 def _is_ip_address_safe(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     if hasattr(ip, "ipv4_mapped") and ip.ipv4_mapped:
         ip = ip.ipv4_mapped
@@ -19,7 +20,10 @@ def _is_ip_address_safe(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bo
         return False
     if ip.is_loopback:
         return bool(getattr(settings, "DEBUG", False))
-    return not (not ip.is_global or ip.is_private or ip.is_link_local or ip.is_reserved or ip.is_multicast)
+    return not (
+        not ip.is_global or ip.is_private or ip.is_link_local or ip.is_reserved or ip.is_multicast
+    )
+
 
 def is_safe_ollama_endpoint(hostname: str) -> bool:
     """
@@ -34,11 +38,20 @@ def is_safe_ollama_endpoint(hostname: str) -> bool:
         normalized_allowlist = {h.strip().lower() for h in allowlist if h.strip()}
         if target_host in normalized_allowlist:
             return True
-        if "localhost" in normalized_allowlist and target_host in ("127.0.0.1", "::1", "0:0:0:0:0:0:0:1"):
+        if "localhost" in normalized_allowlist and target_host in (
+            "127.0.0.1",
+            "::1",
+            "0:0:0:0:0:0:0:1",
+        ):
             return True
 
     # In local development (DEBUG=True), allow localhost and loopbacks by default
-    if getattr(settings, "DEBUG", False) and target_host in ("localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1"):
+    if getattr(settings, "DEBUG", False) and target_host in (
+        "localhost",
+        "127.0.0.1",
+        "::1",
+        "0:0:0:0:0:0:0:1",
+    ):
         return True
 
     try:
@@ -60,21 +73,24 @@ def is_safe_ollama_endpoint(hostname: str) -> bool:
 
     return True
 
+
 def validate_llm_api_base(provider: str, api_base: str, api_key: str | None = None) -> str:
     if provider == "none":
         return api_base
-    
+
     if not api_base:
         if provider == "custom":
             raise ValidationError("Custom provider requires an explicit API Base URL.")
         if provider == "ollama" and not is_safe_ollama_endpoint("localhost"):
-            raise ValidationError("Ollama in production requires an explicit, allowlisted API Base URL.")
+            raise ValidationError(
+                "Ollama in production requires an explicit, allowlisted API Base URL."
+            )
         return api_base
-    
+
     parsed = urlparse(api_base)
     if parsed.scheme not in ("http", "https"):
         raise ValidationError("API Base URL must use http or https scheme.")
-    
+
     hostname = (parsed.hostname or "").lower()
     if not hostname:
         raise ValidationError("Invalid API Base hostname.")
@@ -84,31 +100,42 @@ def validate_llm_api_base(provider: str, api_base: str, api_key: str | None = No
 
     if provider == "openrouter":
         if hostname not in ("openrouter.ai", "www.openrouter.ai"):
-            raise ValidationError("OpenRouter API Base must point to openrouter.ai (e.g. https://openrouter.ai/api/v1).")
+            raise ValidationError(
+                "OpenRouter API Base must point to openrouter.ai (e.g. https://openrouter.ai/api/v1)."
+            )
         if parsed.scheme != "https":
             raise ValidationError("OpenRouter connections must use HTTPS.")
 
     elif provider == "openai":
         if hostname not in ("api.openai.com",):
-            raise ValidationError("OpenAI API Base must point to api.openai.com (e.g. https://api.openai.com/v1).")
+            raise ValidationError(
+                "OpenAI API Base must point to api.openai.com (e.g. https://api.openai.com/v1)."
+            )
         if parsed.scheme != "https":
             raise ValidationError("OpenAI connections must use HTTPS.")
 
     elif provider == "anthropic":
         if hostname not in ("api.anthropic.com",):
-            raise ValidationError("Anthropic API Base must point to api.anthropic.com (e.g. https://api.anthropic.com/v1).")
+            raise ValidationError(
+                "Anthropic API Base must point to api.anthropic.com (e.g. https://api.anthropic.com/v1)."
+            )
         if parsed.scheme != "https":
             raise ValidationError("Anthropic connections must use HTTPS.")
 
     elif provider == "gemini":
         if hostname not in ("generativelanguage.googleapis.com",):
-            raise ValidationError("Google Gemini API Base must point to generativelanguage.googleapis.com.")
+            raise ValidationError(
+                "Google Gemini API Base must point to generativelanguage.googleapis.com."
+            )
         if parsed.scheme != "https":
             raise ValidationError("Gemini connections must use HTTPS.")
 
     elif provider in ("ollama", "custom"):
         if not is_safe_ollama_endpoint(hostname):
-            raise ValidationError(f"Disallowed {provider} destination: private, link-local, or unresolvable internal hostnames are prohibited.")
+            raise ValidationError(
+                f"Disallowed {provider} destination: private, link-local, "
+                "or unresolvable internal hostnames are prohibited."
+            )
         is_loopback = hostname in ("localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1")
         if not is_loopback:
             try:
@@ -118,22 +145,40 @@ def validate_llm_api_base(provider: str, api_base: str, api_key: str | None = No
                 pass
         if not is_loopback and parsed.scheme != "https":
             if provider == "custom":
-                raise ValidationError("Custom remote API base URL must use HTTPS to protect credentials and data.")
+                raise ValidationError(
+                    "Custom remote API base URL must use HTTPS to protect credentials and data."
+                )
             if provider == "ollama" and api_key:
-                raise ValidationError("Ollama remote API base URL must use HTTPS when an API key is configured to protect credentials.")
+                raise ValidationError(
+                    "Ollama remote API base URL must use HTTPS when an API key "
+                    "is configured to protect credentials."
+                )
 
     return api_base
 
+
 class UserRegistrationForm(forms.ModelForm):
-    password = forms.CharField(widget=forms.PasswordInput(attrs={"class": "form-control", "placeholder": "Create a password"}))
-    password_confirm = forms.CharField(widget=forms.PasswordInput(attrs={"class": "form-control", "placeholder": "Confirm password"}))
+    password = forms.CharField(
+        widget=forms.PasswordInput(
+            attrs={"class": "form-control", "placeholder": "Create a password"}
+        )
+    )
+    password_confirm = forms.CharField(
+        widget=forms.PasswordInput(
+            attrs={"class": "form-control", "placeholder": "Confirm password"}
+        )
+    )
 
     class Meta:
         model = User
         fields = ("username", "email")
         widgets = {
-            "username": forms.TextInput(attrs={"class": "form-control", "placeholder": "Username"}),
-            "email": forms.EmailInput(attrs={"class": "form-control", "placeholder": "Email address"}),
+            "username": forms.TextInput(
+                attrs={"class": "form-control", "placeholder": "Username"}
+            ),
+            "email": forms.EmailInput(
+                attrs={"class": "form-control", "placeholder": "Email address"}
+            ),
         }
 
     def clean(self):
@@ -154,10 +199,17 @@ class UserRegistrationForm(forms.ModelForm):
                     self.add_error("password", error)
         return cleaned_data
 
+
 class UserLLMConfigForm(forms.ModelForm):
     raw_api_key = forms.CharField(
         required=False,
-        widget=forms.PasswordInput(render_value=False, attrs={"class": "form-control", "placeholder": "Enter new API key (leave blank to keep existing)"}),
+        widget=forms.PasswordInput(
+            render_value=False,
+            attrs={
+                "class": "form-control",
+                "placeholder": "Enter new API key (leave blank to keep existing)",
+            },
+        ),
         help_text="Key is securely encrypted at rest. Not required for local Ollama.",
     )
 

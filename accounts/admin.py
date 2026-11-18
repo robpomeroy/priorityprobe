@@ -5,7 +5,14 @@ from accounts.models import UserLLMConfig
 
 @admin.register(UserLLMConfig)
 class UserLLMConfigAdmin(admin.ModelAdmin):
-    list_display = ("user", "provider", "model_name", "consent_given", "theme_preference", "updated_at")
+    list_display = (
+        "user",
+        "provider",
+        "model_name",
+        "consent_given",
+        "theme_preference",
+        "updated_at",
+    )
     list_filter = ("provider", "consent_given", "theme_preference")
     search_fields = ("user__username", "user__email", "model_name")
     readonly_fields = ("created_at", "updated_at")
@@ -19,6 +26,7 @@ class UserLLMConfigAdmin(admin.ModelAdmin):
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == "user" and not request.user.is_superuser:
             from django.contrib.auth import get_user_model
+
             User = get_user_model()
             kwargs["queryset"] = User.objects.filter(id=request.user.id)
             kwargs["initial"] = request.user.id

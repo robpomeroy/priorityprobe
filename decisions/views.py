@@ -11,15 +11,18 @@ from llm.service import generate_reflection
 
 @login_required
 def decision_list_view(request):
-    decisions = DecisionRecord.objects.filter(framework__owner=request.user).select_related("framework")
+    decisions = DecisionRecord.objects.filter(framework__owner=request.user).select_related(
+        "framework"
+    )
     return render(request, "decisions/decision_list.html", {"decisions": decisions})
+
 
 @login_required
 def decision_create_view(request):
     framework = Framework.objects.filter(owner=request.user).first()
     if not framework:
         framework = Framework.objects.create(owner=request.user, name="My Priorities")
-        
+
     if request.method == "POST":
         form = DecisionRecordForm(request.POST, framework=framework)
         if form.is_valid():
@@ -31,27 +34,40 @@ def decision_create_view(request):
             return redirect("decisions:decision_detail", decision_id=decision.id)
     else:
         form = DecisionRecordForm(framework=framework)
-    return render(request, "decisions/decision_form.html", {
-        "form": form,
-        "framework": framework,
-        "title": "New Cross-Domain Decision Assessment",
-    })
+    return render(
+        request,
+        "decisions/decision_form.html",
+        {
+            "form": form,
+            "framework": framework,
+            "title": "New Cross-Domain Decision Assessment",
+        },
+    )
+
 
 @login_required
 def decision_detail_view(request, decision_id):
     decision = get_object_or_404(
         DecisionRecord.objects.prefetch_related(
-            "affected_domains", "relevant_whys__domain", "supporting_objectives__primary_domain",
-            "conflicting_objectives__primary_domain", "reflections"
+            "affected_domains",
+            "relevant_whys__domain",
+            "supporting_objectives__primary_domain",
+            "conflicting_objectives__primary_domain",
+            "reflections",
         ),
         id=decision_id,
-        framework__owner=request.user
+        framework__owner=request.user,
     )
     llm_config = getattr(request.user, "llm_config", None)
-    return render(request, "decisions/decision_detail.html", {
-        "decision": decision,
-        "llm_config": llm_config,
-    })
+    return render(
+        request,
+        "decisions/decision_detail.html",
+        {
+            "decision": decision,
+            "llm_config": llm_config,
+        },
+    )
+
 
 @login_required
 def decision_edit_view(request, decision_id):
@@ -65,11 +81,16 @@ def decision_edit_view(request, decision_id):
             return redirect("decisions:decision_detail", decision_id=decision.id)
     else:
         form = DecisionRecordForm(instance=decision, framework=framework)
-    return render(request, "decisions/decision_form.html", {
-        "form": form,
-        "framework": framework,
-        "title": f"Edit Decision Assessment: {decision.title}",
-    })
+    return render(
+        request,
+        "decisions/decision_form.html",
+        {
+            "form": form,
+            "framework": framework,
+            "title": f"Edit Decision Assessment: {decision.title}",
+        },
+    )
+
 
 @login_required
 def decision_delete_view(request, decision_id):
@@ -79,10 +100,15 @@ def decision_delete_view(request, decision_id):
         decision.delete()
         messages.info(request, f"Decision assessment '{title}' was deleted.")
         return redirect("decisions:decision_list")
-    return render(request, "frameworks/confirm_delete.html", {
-        "item_type": "Decision Record",
-        "item_name": decision.title,
-    })
+    return render(
+        request,
+        "frameworks/confirm_delete.html",
+        {
+            "item_type": "Decision Record",
+            "item_name": decision.title,
+        },
+    )
+
 
 @login_required
 def decision_reflect_view(request, decision_id):
@@ -90,11 +116,20 @@ def decision_reflect_view(request, decision_id):
     if request.method == "POST":
         llm_config = getattr(request.user, "llm_config", None)
         if not llm_config or not llm_config.consent_given:
-            messages.error(request, "Please grant consent in LLM Settings before querying external providers.")
+            messages.error(
+                request, "Please grant consent in LLM Settings before querying external providers."
+            )
             return redirect("accounts:settings")
 
         raw_prompt = request.POST.get("prompt", "")
-        user_prompt = raw_prompt.strip() if raw_prompt and raw_prompt.strip() else "Analyze the cross-domain tensions, trade-offs, and alternatives in this proposed decision."
+        user_prompt = (
+            raw_prompt.strip()
+            if raw_prompt and raw_prompt.strip()
+            else (
+                "Analyze the cross-domain tensions, trade-offs, and alternatives "
+                "in this proposed decision."
+            )
+        )
         context_md = generate_decision_markdown(decision)
 
         success, response_text = generate_reflection(
@@ -121,6 +156,7 @@ def decision_reflect_view(request, decision_id):
 
     return redirect("decisions:decision_detail", decision_id=decision.id)
 
+
 @login_required
 def decision_compare_view(request, framework_id=None):
     if framework_id:
@@ -130,8 +166,16 @@ def decision_compare_view(request, framework_id=None):
         if not framework:
             framework = Framework.objects.create(owner=request.user, name="My Priorities")
 
-    all_objectives = Objective.objects.filter(primary_domain__framework=framework).select_related("primary_domain").prefetch_related("whys", "related_domains")
-    all_goals = Goal.objects.filter(primary_domain__framework=framework).select_related("primary_domain").prefetch_related("objectives__whys", "related_domains")
+    all_objectives = (
+        Objective.objects.filter(primary_domain__framework=framework)
+        .select_related("primary_domain")
+        .prefetch_related("whys", "related_domains")
+    )
+    all_goals = (
+        Goal.objects.filter(primary_domain__framework=framework)
+        .select_related("primary_domain")
+        .prefetch_related("objectives__whys", "related_domains")
+    )
 
     raw_type = request.POST.get("type") if request.method == "POST" else request.GET.get("type")
     compare_type = raw_type if raw_type in ("objectives", "goals") else "objectives"
@@ -171,12 +215,18 @@ def decision_compare_view(request, framework_id=None):
     if request.method == "POST":
         action = request.POST.get("action")
         if action in ("convert_to_decision", "reflect") and not items.exists():
-            messages.warning(request, "Please select at least one valid priority item from your framework to compare.")
+            messages.warning(
+                request,
+                "Please select at least one valid priority item from your framework to compare.",
+            )
             return redirect(f"{request.path}?type={compare_type}")
 
         if action == "convert_to_decision":
             title = f"Priority Comparison: {' vs '.join([item.title for item in items][:2])}"
-            proposal = f"Evaluating trade-offs and competing demands between: {', '.join([item.title for item in items])}."
+            proposal = (
+                "Evaluating trade-offs and competing demands between: "
+                f"{', '.join([item.title for item in items])}."
+            )
             rec = DecisionRecord.objects.create(
                 framework=framework,
                 title=title[:200],
@@ -195,13 +245,18 @@ def decision_compare_view(request, framework_id=None):
                         rec.supporting_objectives.add(obj)
                         for w in obj.whys.all():
                             rec.relevant_whys.add(w)
-            messages.success(request, "Created draft Decision Assessment from priority comparison.")
+            messages.success(
+                request, "Created draft Decision Assessment from priority comparison."
+            )
             return redirect("decisions:decision_edit", decision_id=rec.id)
 
         elif action == "reflect":
             llm_config = getattr(request.user, "llm_config", None)
             if not llm_config or not llm_config.consent_given:
-                messages.error(request, "Please grant consent in LLM Settings before querying external providers.")
+                messages.error(
+                    request,
+                    "Please grant consent in LLM Settings before querying external providers.",
+                )
                 return redirect("accounts:settings")
 
             # Build markdown summary of compared items
@@ -211,15 +266,23 @@ def decision_compare_view(request, framework_id=None):
                 summary_lines.append(f"- **Primary Domain:** {item.primary_domain.name}")
                 summary_lines.append(f"- **Status:** {item.get_status_display()}")
                 if compare_type == "objectives":
-                    whys_list = [f"{w.title} {'[NON-NEGOTIABLE]' if w.is_non_negotiable else ''}" for w in item.whys.all()]
+                    whys_list = [
+                        f"{w.title} {'[NON-NEGOTIABLE]' if w.is_non_negotiable else ''}"
+                        for w in item.whys.all()
+                    ]
                     summary_lines.append(f"- **Connected Whys:** {', '.join(whys_list) or 'None'}")
                 elif compare_type == "goals":
                     objs_list = []
                     for o in item.objectives.all():
-                        whys_items = [f"{w.title}{' [NON-NEGOTIABLE]' if w.is_non_negotiable else ''}" for w in o.whys.all()]
+                        whys_items = [
+                            f"{w.title}{' [NON-NEGOTIABLE]' if w.is_non_negotiable else ''}"
+                            for w in o.whys.all()
+                        ]
                         whys_str = f" (Whys: {', '.join(whys_items)})" if whys_items else ""
                         objs_list.append(f"{o.title}{whys_str}")
-                    summary_lines.append(f"- **Parent Objectives:** {', '.join(objs_list) or 'None'}")
+                    summary_lines.append(
+                        f"- **Parent Objectives:** {', '.join(objs_list) or 'None'}"
+                    )
                     if item.target_date:
                         summary_lines.append(f"- **Target Date:** {item.target_date}")
                 rel_doms = [d.name for d in item.related_domains.all()]
@@ -229,7 +292,11 @@ def decision_compare_view(request, framework_id=None):
                 summary_lines.append("")
 
             comp_md = "\n".join(summary_lines)
-            default_prompt = "Analyze qualitative tensions and trade-offs between these competing priorities across domains, especially regarding limited time and energy. Note any non-negotiable Whys."
+            default_prompt = (
+                "Analyze qualitative tensions and trade-offs between these competing "
+                "priorities across domains, especially regarding limited time and energy. "
+                "Note any non-negotiable Whys."
+            )
             user_prompt = request.POST.get("prompt", "").strip() or default_prompt
             success, response_text = generate_reflection(
                 user_context_markdown=comp_md,
@@ -262,13 +329,17 @@ def decision_compare_view(request, framework_id=None):
                 messages.error(request, response_text)
 
     llm_config = getattr(request.user, "llm_config", None)
-    return render(request, "decisions/compare.html", {
-        "framework": framework,
-        "compare_type": compare_type,
-        "all_objectives": all_objectives,
-        "all_goals": all_goals,
-        "selected_ids": selected_ids,
-        "items": items,
-        "comparison_reflection": comparison_reflection,
-        "llm_config": llm_config,
-    })
+    return render(
+        request,
+        "decisions/compare.html",
+        {
+            "framework": framework,
+            "compare_type": compare_type,
+            "all_objectives": all_objectives,
+            "all_goals": all_goals,
+            "selected_ids": selected_ids,
+            "items": items,
+            "comparison_reflection": comparison_reflection,
+            "llm_config": llm_config,
+        },
+    )

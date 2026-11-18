@@ -23,7 +23,11 @@ if not SECRET_KEY:
     else:
         raise ValueError("DJANGO_SECRET_KEY must be set in production (when DEBUG is False).")
 
-ALLOWED_HOSTS = [h.strip() for h in os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1,[::1]").split(",") if h.strip()]
+ALLOWED_HOSTS = [
+    h.strip()
+    for h in os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1,[::1]").split(",")
+    if h.strip()
+]
 
 # Application definition
 INSTALLED_APPS = [
@@ -116,7 +120,10 @@ else:
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 8}},
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "OPTIONS": {"min_length": 8},
+    },
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
@@ -142,11 +149,22 @@ LOGOUT_REDIRECT_URL = "accounts:login"
 
 # Trust X-Forwarded-Proto from reverse proxy (e.g. Nginx TLS terminator)
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", str(not DEBUG)).lower() in ("true", "1", "yes")
-CSRF_COOKIE_SECURE = os.environ.get("CSRF_COOKIE_SECURE", str(not DEBUG)).lower() in ("true", "1", "yes")
+SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", str(not DEBUG)).lower() in (
+    "true",
+    "1",
+    "yes",
+)
+CSRF_COOKIE_SECURE = os.environ.get("CSRF_COOKIE_SECURE", str(not DEBUG)).lower() in (
+    "true",
+    "1",
+    "yes",
+)
 
-# Allowlisted Ollama hosts in hosted deployments (comma-separated, e.g. "ollama,host.docker.internal")
-OLLAMA_ALLOWED_HOSTS = [h.strip() for h in os.environ.get("OLLAMA_ALLOWED_HOSTS", "").split(",") if h.strip()]
+# Allowlisted Ollama hosts in hosted deployments
+# (comma-separated, e.g. "ollama,host.docker.internal")
+OLLAMA_ALLOWED_HOSTS = [
+    h.strip() for h in os.environ.get("OLLAMA_ALLOWED_HOSTS", "").split(",") if h.strip()
+]
 
 # Encryption key for sensitive fields (BYOK API keys)
 ENCRYPTION_KEY = os.environ.get("ENCRYPTION_KEY", "")

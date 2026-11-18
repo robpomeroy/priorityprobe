@@ -16,11 +16,13 @@ def get_cipher():
         key = base64.urlsafe_b64encode(derived).decode("utf-8")
     return Fernet(key.encode("utf-8"))
 
+
 def encrypt_value(value: str) -> str:
     if not value:
         return ""
     cipher = get_cipher()
     return cipher.encrypt(value.encode("utf-8")).decode("utf-8")
+
 
 def decrypt_value(encrypted_value: str) -> str:
     if not encrypted_value:

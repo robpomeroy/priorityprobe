@@ -1,7 +1,8 @@
 import ctypes
 import os
 
-# If system SQLite is older than 3.37 (required by Django 6.0+), load modern SQLite into global symbol table
+# If system SQLite is older than 3.37 (required by Django 6.0+),
+# load a modern SQLite shared library into the global symbol table.
 for _candidate in (
     "/usr/local/aws-cli/v2/2.27.11/dist/libsqlite3.so.0",
     "/usr/local/aws-cli/v2/current/dist/libsqlite3.so.0",
