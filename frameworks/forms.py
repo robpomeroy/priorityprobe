@@ -1,5 +1,7 @@
 from django import forms
-from frameworks.models import Framework, Domain, Why, Objective, Goal
+
+from frameworks.models import Domain, Framework, Goal, Objective, Why
+
 
 class FrameworkForm(forms.ModelForm):
     class Meta:

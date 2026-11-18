@@ -1,15 +1,19 @@
 import os
+
 os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+
+from unittest.mock import MagicMock, patch
 
 import pytest
 from django.contrib.auth.models import User
+
+from accounts.crypto import decrypt_value, encrypt_value
 from accounts.models import UserLLMConfig
-from accounts.crypto import encrypt_value, decrypt_value
-from frameworks.models import Framework, Domain, Why, Objective, Goal, StatusChoices
-from frameworks.services import seed_sample_framework, remove_sample_frameworks
 from decisions.models import DecisionRecord, DecisionStatus, LLMReflectionLog
-from exports.services import generate_framework_markdown, generate_decision_markdown
-from unittest.mock import patch, MagicMock
+from exports.services import generate_framework_markdown
+from frameworks.models import Domain, Framework, Goal, Objective, StatusChoices, Why
+from frameworks.services import remove_sample_frameworks, seed_sample_framework
+
 
 @pytest.fixture
 def user(db):
@@ -497,10 +501,11 @@ def test_chat_view_empty_and_no_consent(client, user, framework):
 # --- Tests for Copilot Review Fixes ---
 
 def test_secret_key_production_error():
-    import os
     import importlib
+    import os
     import sys
     from unittest.mock import patch
+
     from django.conf import settings
 
     old_debug = getattr(settings, "DEBUG", True)
@@ -543,11 +548,15 @@ def test_api_base_ssrf_validation(client, user):
     assert "OpenRouter connections must use HTTPS" in resp.content.decode()
 
 def test_admin_queryset_filtering(user, other_user, framework, domain, why, objective, goal):
-    from frameworks.admin import FrameworkAdmin, DomainAdmin, WhyAdmin, ObjectiveAdmin, GoalAdmin
-    from decisions.admin import DecisionRecordAdmin, LLMReflectionLogAdmin
+    from django.contrib.admin.sites import AdminSite
+
     from accounts.admin import UserLLMConfigAdmin
     from accounts.models import UserLLMConfig
-    from django.contrib.admin.sites import AdminSite
+    from decisions.admin import DecisionRecordAdmin
+    from frameworks.admin import (
+        DomainAdmin,
+        FrameworkAdmin,
+    )
 
     site = AdminSite()
     f_admin = FrameworkAdmin(Framework, site)
@@ -648,6 +657,7 @@ def test_decision_export_instructions_and_filename_sanitization(client, user, fr
 
 def test_user_llm_admin_add_and_ownership_enforcement(user, other_user):
     from django.contrib.admin.sites import AdminSite
+
     from accounts.admin import UserLLMConfigAdmin
     site = AdminSite()
     llm_admin = UserLLMConfigAdmin(UserLLMConfig, site)
@@ -790,6 +800,7 @@ def test_objective_and_goal_status_updates(client, user, other_user, objective, 
 
 def test_review_cadence_and_mark_all(client, user, framework, objective, goal):
     from datetime import timedelta
+
     from django.utils import timezone
     client.force_login(user)
 
@@ -823,7 +834,7 @@ def test_review_cadence_and_mark_all(client, user, framework, objective, goal):
 
 
 def test_priority_comparison_view(client, user, framework, domain, objective, goal):
-    from frameworks.models import Domain, Why, Objective, Goal
+    from frameworks.models import Domain, Goal, Objective, Why
     client.force_login(user)
 
     domain2 = Domain.objects.create(framework=framework, name="Health", display_order=2)
@@ -1004,14 +1015,14 @@ def test_llm_test_connection_endpoint(client, user):
 
 
 def test_selective_markdown_export_builder(client, user, framework, domain, objective, goal):
-    from frameworks.models import Domain, Why
+    from frameworks.models import Domain
     domain2 = Domain.objects.create(framework=framework, name="Finance", display_order=2)
     dec = DecisionRecord.objects.create(
         framework=framework,
         title="Selective Export Decision",
         proposal_description="Test selective export"
     )
-    reflection = LLMReflectionLog.objects.create(
+    LLMReflectionLog.objects.create(
         framework=framework,
         user_prompt="Test prompt",
         context_snapshot="Test snapshot",
@@ -1069,7 +1080,7 @@ def test_llm_chat_context_and_history(client, user, framework, domain, objective
     client.force_login(user)
 
     # Initial reflection log
-    prev_log = LLMReflectionLog.objects.create(
+    LLMReflectionLog.objects.create(
         framework=framework,
         user_prompt="Prior message",
         context_snapshot="Prior context",
@@ -1143,8 +1154,9 @@ def test_llm_reflection_deletion(client, user, other_user, framework):
 
 
 def test_llm_api_base_validation():
-    from accounts.forms import validate_llm_api_base
     from django.core.exceptions import ValidationError
+
+    from accounts.forms import validate_llm_api_base
 
     # Allowed providers with valid endpoints
     assert validate_llm_api_base("openai", "https://api.openai.com/v1") == "https://api.openai.com/v1"
@@ -1208,10 +1220,11 @@ def test_llm_api_base_validation():
 
 
 def test_coverage_boosters(user, other_user, framework, domain, why, objective):
-    from accounts.forms import is_safe_ollama_endpoint
-    from decisions.models import DecisionRecord, LLMReflectionLog
-    from decisions.admin import DecisionRecordAdmin, LLMReflectionLogAdmin
     from django.contrib.admin.sites import AdminSite
+
+    from accounts.forms import is_safe_ollama_endpoint
+    from decisions.admin import DecisionRecordAdmin, LLMReflectionLogAdmin
+    from decisions.models import DecisionRecord, LLMReflectionLog
     from llm.service import generate_reflection
 
     # 1. Endpoint safety checks
@@ -1359,8 +1372,9 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
     assert ref_dec_field.queryset.filter(framework__owner=other_user).count() == 0
 
     # 5. SSRFSafeTransport, IP pinning, and redirect prevention
-    from llm.service import SSRFSafeTransport
     import httpx
+
+    from llm.service import SSRFSafeTransport
     transport = SSRFSafeTransport(allowlist=[])
     with pytest.raises(ValueError, match="Outbound connection blocked"):
         req = httpx.Request("GET", "http://169.254.169.254/latest/meta-data/")
@@ -1405,7 +1419,7 @@ def test_coverage_boosters(user, other_user, framework, domain, why, objective):
 
 
 def test_compare_view_security_and_edge_cases(client, user, other_user, framework, objective, goal):
-    from frameworks.models import Framework, Domain, Objective
+    from frameworks.models import Domain, Framework, Objective
     client.force_login(user)
 
     # 1. Cross-user isolation: accessing another user's framework returns 404
@@ -1498,7 +1512,7 @@ def test_chat_view_selected_decisions_filtering(client, user, framework):
     cfg.save()
 
     dec1 = DecisionRecord.objects.create(framework=framework, title="Decision Alpha", proposal_description="Alpha desc")
-    dec2 = DecisionRecord.objects.create(framework=framework, title="Decision Beta", proposal_description="Beta desc")
+    DecisionRecord.objects.create(framework=framework, title="Decision Beta", proposal_description="Beta desc")
 
     with patch("llm.views.generate_reflection", return_value=(True, "Chat response")) as mock_gen:
         resp = client.post(f"/llm/framework/{framework.id}/chat/", {
@@ -1584,6 +1598,7 @@ def test_settings_view_clears_api_key_when_api_base_changes(client, user):
 
 def test_cookie_secure_settings_env_parsing(monkeypatch):
     import importlib
+
     import config.settings
 
     # Test "yes" / "1" -> True

@@ -1,6 +1,8 @@
 from django.contrib import admin
+
 from decisions.models import DecisionRecord, LLMReflectionLog
-from frameworks.models import Framework, Domain, Why, Objective
+from frameworks.models import Domain, Framework, Objective, Why
+
 
 @admin.register(DecisionRecord)
 class DecisionRecordAdmin(admin.ModelAdmin):

@@ -44,6 +44,15 @@ coverage html
 # Open htmlcov/index.html in your browser
 ```
 
+### 2.3 Automated QA Quality Gate
+Run the unified 4-stage quality gate script before committing changes:
+
+```bash
+./bin/qa.sh
+```
+
+This verifies Ruff style checks, Mypy static typing, Bandit security scanning, and the full Pytest suite.
+
 ---
 
 ## 3. Test Suite Structure (`tests/test_prioritysuite.py`)

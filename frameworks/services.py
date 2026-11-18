@@ -1,4 +1,5 @@
-from frameworks.models import Framework, Domain, Why, Objective, Goal, StatusChoices
+from frameworks.models import Domain, Framework, Goal, Objective, StatusChoices, Why
+
 
 def seed_sample_framework(user) -> Framework:
     """Populates an illustrative sample framework clearly flagged with is_sample=True."""
@@ -42,7 +43,7 @@ def seed_sample_framework(user) -> Framework:
         display_order=2,
         is_sample=True,
     )
-    why_work_1 = Why.objects.create(
+    Why.objects.create(
         domain=work,
         title="To contribute something worthwhile and intellectually honest through my work.",
         description="Finding meaning in craft, integrity, and serving real human needs.",

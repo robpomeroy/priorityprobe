@@ -1,10 +1,12 @@
 import logging
 from urllib.parse import urlparse
-from django.shortcuts import render, redirect
+
+from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
-from django.contrib import messages
-from accounts.forms import UserRegistrationForm, UserLLMConfigForm
+from django.shortcuts import redirect, render
+
+from accounts.forms import UserLLMConfigForm, UserRegistrationForm
 from accounts.models import UserLLMConfig
 
 logger = logging.getLogger(__name__)
@@ -114,28 +116,26 @@ def test_llm_connection_view(request):
                     if parsed_base.port:
                         netloc = f"{netloc}:{parsed_base.port}"
                     sanitized_base = parsed_base._replace(netloc=netloc).geturl()
-            except Exception:
+            except ValueError:
                 sanitized_base = "[invalid-url]"
 
         sanitized_resp = response_text
         if api_key and api_key in sanitized_resp:
             sanitized_resp = sanitized_resp.replace(api_key, "[REDACTED]")
-        if api_base:
+        if api_base and sanitized_base != "[invalid-url]":
             try:
                 parsed_base = urlparse(api_base)
                 if parsed_base.password and parsed_base.password in sanitized_resp:
                     sanitized_resp = sanitized_resp.replace(parsed_base.password, "[REDACTED]")
-            except Exception:
-                pass
+            except ValueError:
+                sanitized_resp = "[REDACTED]"
 
         logger.warning(
             "LLM test connection failure for user '%s' (%s/%s, base=%s): %s",
             request.user.username, provider, model_name, sanitized_base, sanitized_resp
         )
         # Preserve specific policy validation errors while sanitizing lower-level stack/connection traces
-        if response_text.startswith("Invalid API base URL:") or response_text.startswith("Outbound connection blocked:"):
-            display_err = response_text
-        elif "Consent" in response_text or "disabled" in response_text or "unconfigured" in response_text:
+        if response_text.startswith(("Invalid API base URL:", "Outbound connection blocked:")) or "Consent" in response_text or "disabled" in response_text or "unconfigured" in response_text:
             display_err = response_text
         else:
             display_err = "The LLM endpoint could not be reached or returned an authentication/connectivity error. Check settings and credentials."

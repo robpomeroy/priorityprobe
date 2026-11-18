@@ -1,6 +1,8 @@
-from django.db import models
 from django.contrib.auth.models import User
-from accounts.crypto import encrypt_value, decrypt_value
+from django.db import models
+
+from accounts.crypto import decrypt_value, encrypt_value
+
 
 class UserLLMConfig(models.Model):
     PROVIDER_CHOICES = [

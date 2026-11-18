@@ -68,14 +68,20 @@ docker compose exec web python manage.py createsuperuser
 
 ## Testing & Quality
 
-Run the test suite with coverage:
+Run the unified quality assurance gate:
+
+```bash
+./bin/qa.sh
+```
+
+Or run the test suite with coverage:
 
 ```bash
 coverage run -m pytest
 coverage report
 ```
 
-Current test suite coverage: **87%** across all modules.
+Current test suite coverage: **90%** across all application modules.
 
 ---
 

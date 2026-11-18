@@ -1,5 +1,7 @@
 import os
+import tempfile
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 # Ensure LiteLLM uses bundled offline cost map without remote network fetches
@@ -17,7 +19,7 @@ DEBUG = os.environ.get("DEBUG", "True").lower() in ("true", "1", "yes")
 
 if not SECRET_KEY:
     if DEBUG:
-        SECRET_KEY = "django-insecure-dev-key-prioritysuite-framework-2026"
+        SECRET_KEY = "django-insecure-dev-key-prioritysuite-framework-2026"  # nosec B105
     else:
         raise ValueError("DJANGO_SECRET_KEY must be set in production (when DEBUG is False).")
 
@@ -94,20 +96,20 @@ else:
     # We allow configuring SQLITE_PATH or fallback gracefully.
     default_sqlite_path = BASE_DIR / "db.sqlite3"
     # If BASE_DIR is UNC path, use TEMP directory for SQLite to prevent UNC SMB locking failures
-    sqlite_db_path = os.environ.get("SQLITE_PATH", "")
-    if not sqlite_db_path:
+    sqlite_env_path = os.environ.get("SQLITE_PATH", "")
+    if not sqlite_env_path:
         if str(BASE_DIR).startswith("\\\\"):
-            temp_dir = Path(os.environ.get("TEMP", "/tmp"))
+            temp_dir = Path(tempfile.gettempdir())
             sqlite_db_path = temp_dir / "prioritysuite_dev.sqlite3"
         else:
             sqlite_db_path = default_sqlite_path
     else:
-        sqlite_db_path = Path(sqlite_db_path)
+        sqlite_db_path = Path(sqlite_env_path)
 
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
-            "NAME": sqlite_db_path,
+            "NAME": str(sqlite_db_path),
         }
     }
 

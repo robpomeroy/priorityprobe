@@ -1,5 +1,7 @@
 from django.contrib import admin
+
 from accounts.models import UserLLMConfig
+
 
 @admin.register(UserLLMConfig)
 class UserLLMConfigAdmin(admin.ModelAdmin):

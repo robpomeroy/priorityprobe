@@ -1,6 +1,7 @@
 from django.db import models
-from django.contrib.auth.models import User
-from frameworks.models import Framework, Domain, Why, Objective, Goal
+
+from frameworks.models import Domain, Framework, Objective, Why
+
 
 class DecisionStatus(models.TextChoices):
     EXPLORING = "EXPLORING", "Exploring"

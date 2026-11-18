@@ -2,7 +2,7 @@
 
 ## 1. Project Overview & Philosophy
 
-PrioritySuite is built with Python 3.13+ and Django 5.x. It intentionally avoids complex frontend SPA build steps (React/Vue/Node build tooling) by pairing server-rendered Django templates with **HTMX** and **Bootstrap 5.3** customized with an autumnal theme.
+PrioritySuite is built with Python 3.12+ (tested up to 3.13) and Django 6.1.x. It intentionally avoids complex frontend SPA build steps (React/Vue/Node build tooling) by pairing server-rendered Django templates with **HTMX** and **Bootstrap 5.3** customized with an autumnal theme.
 
 ### Core Architectural Decisions:
 - **Clean Django Modular Architecture:** Apps are organized by functional boundaries: `accounts`, `frameworks`, `decisions`, `exports`, and `llm`.
@@ -42,7 +42,7 @@ priorityprobe/
 ## 3. Local Development Setup
 
 ### 3.1 Prerequisites
-- Python 3.13+ (or 3.11/3.12)
+- Python 3.12+ (e.g. 3.12 or 3.13)
 - Git
 
 ### 3.2 Setup Steps
@@ -96,3 +96,19 @@ The `generate_reflection` function accepts:
 - `api_base`: Base URL (e.g. `http://localhost:11434`).
 
 Responses are logged in `decisions.models.LLMReflectionLog` and displayed in dedicated thinking partner cards without ever mutating the user's primary framework models.
+
+---
+
+## 5. Automated Quality Assurance Gate
+
+All pull requests and code modifications must pass the automated QA gate before merging:
+
+```bash
+./bin/qa.sh
+```
+
+This verifies:
+1. **Ruff:** Linting, style consistency, and unused imports (`ruff check .`).
+2. **Mypy:** Static type verification across all application packages (`mypy accounts config decisions exports frameworks llm`).
+3. **Bandit:** Automated AST-based security vulnerability and CWE scan (`bandit -c pyproject.toml -r accounts config decisions exports frameworks llm -q`).
+4. **Pytest:** Full automated test suite across all user isolation, CRUD, review, and decision support workflows.

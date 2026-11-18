@@ -1,12 +1,13 @@
-from frameworks.models import Framework, Domain, Why, Objective, Goal
 from decisions.models import DecisionRecord
+from frameworks.models import Framework
 from llm.service import SYSTEM_FACILITATOR_PROMPT
+
 
 def generate_framework_markdown(
     framework: Framework,
     include_instructions: bool = True,
-    selected_domain_ids: list = None,
-    selected_decision_ids: list = None,
+    selected_domain_ids: list[int] | None = None,
+    selected_decision_ids: list[int] | None = None,
     include_reflections: bool = False,
 ) -> str:
     """Generates clean Markdown for a user's framework, including prompt instructions for external LLMs."""

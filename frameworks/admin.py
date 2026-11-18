@@ -1,5 +1,7 @@
 from django.contrib import admin
-from frameworks.models import Framework, Domain, Why, Objective, Goal
+
+from frameworks.models import Domain, Framework, Goal, Objective, Why
+
 
 class UserOwnedAdmin(admin.ModelAdmin):
     """

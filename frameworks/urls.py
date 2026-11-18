@@ -1,4 +1,5 @@
 from django.urls import path
+
 from frameworks import views
 
 app_name = "frameworks"

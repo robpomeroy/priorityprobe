@@ -1,7 +1,8 @@
 import os
 import socket
-from typing import List, Dict, Optional, Tuple
+from typing import Any, cast
 from urllib.parse import urlparse
+
 import httpx
 
 # Prevent LiteLLM from making outbound network calls to download cost maps on init
@@ -18,7 +19,7 @@ class SSRFSafeTransport(httpx.HTTPTransport):
     HTTP transport that enforces SSRF validation on every destination host/IP
     and disables automatic redirect following at the transport layer.
     """
-    def __init__(self, allowlist: Optional[List[str]] = None, **kwargs):
+    def __init__(self, allowlist: list[str] | None = None, **kwargs):
         self.allowlist = {h.strip().lower() for h in (allowlist or []) if h.strip()}
         super().__init__(**kwargs)
 
@@ -40,12 +41,12 @@ class SSRFSafeTransport(httpx.HTTPTransport):
         # Resolve host to IP addresses (supports dual-stack IPv4/IPv6)
         try:
             addr_infos = socket.getaddrinfo(original_host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
-        except Exception as exc:
+        except (socket.gaierror, OSError, ValueError) as exc:
             raise ValueError(f"Could not resolve destination host '{original_host}': {exc}")
 
         safe_ip = None
         for family, socktype, proto, canonname, sockaddr in addr_infos:
-            ip_str = sockaddr[0]
+            ip_str = str(sockaddr[0])
             if ip_str in ("169.254.169.254", "metadata.google.internal") or (not is_allowlisted and not is_safe_ollama_endpoint(ip_str)):
                 raise ValueError(f"Outbound connection blocked: destination {ip_str} is private or restricted.")
             if safe_ip is None:
@@ -120,11 +121,11 @@ def generate_reflection(
     user_prompt: str,
     provider: str,
     model_name: str,
-    api_key: Optional[str] = None,
-    api_base: Optional[str] = None,
-    history: Optional[List[Dict[str, str]]] = None,
+    api_key: str | None = None,
+    api_base: str | None = None,
+    history: list[dict[str, str]] | None = None,
     timeout: int = 60,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """
     Vendor-neutral completion wrapper using LiteLLM.
     Supports Ollama, OpenRouter, OpenAI, Anthropic, Gemini, and custom OpenAI-compatible gateways.
@@ -137,8 +138,7 @@ def generate_reflection(
     if provider == "custom" and not normalized_model.startswith("openai/"):
         normalized_model = f"openai/{normalized_model}"
     elif provider == "ollama":
-        if normalized_model.startswith("ollama/"):
-            normalized_model = normalized_model[len("ollama/"):]
+        normalized_model = normalized_model.removeprefix("ollama/")
         if not normalized_model.startswith("openai/"):
             normalized_model = f"openai/{normalized_model}"
     elif provider == "gemini" and not normalized_model.startswith("gemini/"):
@@ -159,8 +159,9 @@ def generate_reflection(
             resolved_api_base = f"{stripped_base}/v1"
 
     if resolved_api_base or provider in ("ollama", "custom"):
-        from accounts.forms import validate_llm_api_base
         from django.core.exceptions import ValidationError
+
+        from accounts.forms import validate_llm_api_base
         try:
             validate_llm_api_base(provider, resolved_api_base or "", api_key=api_key)
         except ValidationError as e:
@@ -182,13 +183,13 @@ def generate_reflection(
             host_explicitly_allowlisted = (host_str.lower() in normalized_allowlist)
 
             for family, socktype, proto, canonname, sockaddr in addr_infos:
-                ip_str = sockaddr[0]
+                ip_str = str(sockaddr[0])
                 if ip_str in ("169.254.169.254", "metadata.google.internal"):
                     return False, f"Outbound connection blocked: destination {ip_str} is private or restricted."
                 if not host_explicitly_allowlisted and not is_safe_ollama_endpoint(ip_str):
                     return False, f"Outbound connection blocked: destination {ip_str} is private or restricted."
-        except Exception as exc:
-            return False, f"Destination safety check failed: {str(exc)}"
+        except (socket.gaierror, OSError, ValueError) as exc:
+            return False, f"Destination safety check failed: {exc!s}"
 
     # Format messages: system -> previous conversation history -> current prompt
     messages = [
@@ -196,8 +197,7 @@ def generate_reflection(
     ]
 
     if history:
-        for item in history:
-            messages.append(item)
+        messages.extend(history)
 
     messages.append({
         "role": "user",
@@ -226,14 +226,14 @@ def generate_reflection(
             kwargs["client"] = openai.OpenAI(
                 base_url=resolved_api_base,
                 api_key=api_key or ("sk-dummy" if provider == "custom" else "ollama"),
-                http_client=http_client,
+                http_client=cast(Any, http_client),
             )
 
         response = litellm.completion(**kwargs)
         content = response.choices[0].message.content
         return True, content
-    except Exception as exc:
-        return False, f"LLM Connection Error: {str(exc)}"
+    except Exception as exc:  # noqa: BLE001
+        return False, f"LLM Connection Error: {exc!s}"
     finally:
         if http_client is not None:
             http_client.close()

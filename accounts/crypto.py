@@ -1,7 +1,9 @@
 import base64
 import hashlib
-from cryptography.fernet import Fernet
+
+from cryptography.fernet import Fernet, InvalidToken
 from django.conf import settings
+
 
 def get_cipher():
     key = getattr(settings, "ENCRYPTION_KEY", "")
@@ -26,5 +28,5 @@ def decrypt_value(encrypted_value: str) -> str:
     try:
         cipher = get_cipher()
         return cipher.decrypt(encrypted_value.encode("utf-8")).decode("utf-8")
-    except Exception:
+    except (InvalidToken, ValueError, TypeError):
         return ""

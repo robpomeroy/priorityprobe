@@ -1,25 +1,25 @@
 import ipaddress
 import socket
 from urllib.parse import urlparse
+
 from django import forms
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+
 from accounts.models import UserLLMConfig
 
 ALLOWED_PROVIDERS = {"ollama", "openrouter", "openai", "anthropic", "gemini", "custom", "none"}
 
-def _is_ip_address_safe(ip: ipaddress._BaseAddress) -> bool:
+def _is_ip_address_safe(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     if hasattr(ip, "ipv4_mapped") and ip.ipv4_mapped:
         ip = ip.ipv4_mapped
     if ip.is_unspecified:
         return False
     if ip.is_loopback:
         return bool(getattr(settings, "DEBUG", False))
-    if not ip.is_global or ip.is_private or ip.is_link_local or ip.is_reserved or ip.is_multicast:
-        return False
-    return True
+    return not (not ip.is_global or ip.is_private or ip.is_link_local or ip.is_reserved or ip.is_multicast)
 
 def is_safe_ollama_endpoint(hostname: str) -> bool:
     """
@@ -38,9 +38,8 @@ def is_safe_ollama_endpoint(hostname: str) -> bool:
             return True
 
     # In local development (DEBUG=True), allow localhost and loopbacks by default
-    if getattr(settings, "DEBUG", False):
-        if target_host in ("localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1"):
-            return True
+    if getattr(settings, "DEBUG", False) and target_host in ("localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1"):
+        return True
 
     try:
         ip = ipaddress.ip_address(target_host)
@@ -56,21 +55,20 @@ def is_safe_ollama_endpoint(hostname: str) -> bool:
                 resolved_ip = ipaddress.ip_address(addr_str)
                 if not _is_ip_address_safe(resolved_ip):
                     return False
-        except Exception:
+        except (socket.gaierror, ValueError, OSError):
             return False
 
     return True
 
-def validate_llm_api_base(provider: str, api_base: str, api_key: str = None):
+def validate_llm_api_base(provider: str, api_base: str, api_key: str | None = None) -> str:
     if provider == "none":
         return api_base
     
     if not api_base:
         if provider == "custom":
             raise ValidationError("Custom provider requires an explicit API Base URL.")
-        if provider == "ollama":
-            if not is_safe_ollama_endpoint("localhost"):
-                raise ValidationError("Ollama in production requires an explicit, allowlisted API Base URL.")
+        if provider == "ollama" and not is_safe_ollama_endpoint("localhost"):
+            raise ValidationError("Ollama in production requires an explicit, allowlisted API Base URL.")
         return api_base
     
     parsed = urlparse(api_base)
@@ -180,7 +178,7 @@ class UserLLMConfigForm(forms.ModelForm):
         api_base = cleaned_data.get("api_base")
         raw_api_key = (cleaned_data.get("raw_api_key") or "").strip()
 
-        effective_key = raw_api_key or None
+        effective_key: str | None = raw_api_key or None
         if not effective_key and self.instance and self.instance.pk:
             old_provider = getattr(self.instance, "provider", "")
             old_api_base = (getattr(self.instance, "api_base", "") or "").strip()

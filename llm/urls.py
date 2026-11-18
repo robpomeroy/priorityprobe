@@ -1,4 +1,5 @@
 from django.urls import path
+
 from llm import views
 
 app_name = "llm"

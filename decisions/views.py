@@ -1,11 +1,13 @@
-from django.shortcuts import render, get_object_or_404, redirect
-from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from decisions.models import DecisionRecord, DecisionStatus, LLMReflectionLog
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import get_object_or_404, redirect, render
+
 from decisions.forms import DecisionRecordForm
-from frameworks.models import Framework, Objective, Goal
+from decisions.models import DecisionRecord, LLMReflectionLog
 from exports.services import generate_decision_markdown
+from frameworks.models import Framework, Goal, Objective
 from llm.service import generate_reflection
+
 
 @login_required
 def decision_list_view(request):
@@ -193,7 +195,7 @@ def decision_compare_view(request, framework_id=None):
                         rec.supporting_objectives.add(obj)
                         for w in obj.whys.all():
                             rec.relevant_whys.add(w)
-            messages.success(request, f"Created draft Decision Assessment from priority comparison.")
+            messages.success(request, "Created draft Decision Assessment from priority comparison.")
             return redirect("decisions:decision_edit", decision_id=rec.id)
 
         elif action == "reflect":
