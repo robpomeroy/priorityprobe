@@ -60,10 +60,8 @@ class SSRFSafeTransport(httpx.HTTPTransport):
             and original_host in LOOPBACK_HOSTS
         )
         is_debug = bool(getattr(settings, "DEBUG", False))
-        loopback_allowed = (
-            is_debug
-            or (original_host in LOOPBACK_HOSTS)
-            or bool(self.allowlist & LOOPBACK_HOSTS)
+        loopback_allowed = is_debug or (
+            original_host in LOOPBACK_HOSTS and bool(self.allowlist & LOOPBACK_HOSTS)
         )
 
         # Resolve host to IP addresses (supports dual-stack IPv4/IPv6)

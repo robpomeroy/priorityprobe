@@ -67,32 +67,30 @@ def is_safe_ollama_endpoint(hostname: str) -> bool:
 
     is_debug = bool(getattr(settings, "DEBUG", False))
     allowlist = getattr(settings, "OLLAMA_ALLOWED_HOSTS", None)
-    if allowlist is not None:
-        normalized_allowlist = {h.strip().lower() for h in allowlist if h.strip()}
-        loopback_allowed = is_debug or bool(normalized_allowlist & LOOPBACK_HOSTS)
+    normalized_allowlist = (
+        {h.strip().lower() for h in allowlist if h.strip()}
+        if allowlist is not None
+        else set()
+    )
+    loopback_allowed = is_debug or bool(normalized_allowlist & LOOPBACK_HOSTS)
 
-        # Allowlisted endpoint: verify it is not restricted
-        if target_host in normalized_allowlist:
-            try:
-                ip = ipaddress.ip_address(target_host)
-                if is_restricted_ip(ip):
-                    return False
-                if ip.is_loopback and not loopback_allowed:
-                    return False
-                return True
-            except ValueError:
-                # Target is an allowlisted hostname (e.g. Docker sidecar 'ollama').
-                # Form validation allows configured hostnames without synchronous DNS calls;
-                # connection-time IP validation & anti-rebinding are enforced by SSRFSafeTransport.
-                return True
-
-        if loopback_allowed and target_host in LOOPBACK_HOSTS:
+    # Allowlisted endpoint: verify it is not restricted
+    if target_host in normalized_allowlist:
+        try:
+            ip = ipaddress.ip_address(target_host)
+            if is_restricted_ip(ip):
+                return False
+            if ip.is_loopback and not loopback_allowed:
+                return False
             return True
-        return False
+        except ValueError:
+            # Target is an allowlisted hostname (e.g. Docker sidecar 'ollama').
+            # Form validation allows configured hostnames without synchronous DNS calls;
+            # connection-time IP validation & anti-rebinding are enforced by SSRFSafeTransport.
+            return True
 
-    # In local development (DEBUG=True), allow localhost and loopbacks by default
-    if is_debug and target_host in LOOPBACK_HOSTS:
-        return True
+    if target_host in LOOPBACK_HOSTS:
+        return loopback_allowed
 
     try:
         ip = ipaddress.ip_address(target_host)

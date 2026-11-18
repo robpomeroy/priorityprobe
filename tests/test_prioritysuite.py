@@ -2255,6 +2255,32 @@ def test_dns_rebinding_ssrf_prevention():
         with pytest.raises(ValueError, match="Outbound connection blocked"):
             transport.handle_request(req_v6)
 
+    # When localhost is allowlisted alongside an external host (F-02),
+    # the external host must still NOT be allowed to rebind to 127.0.0.1
+    transport_multi = SSRFSafeTransport(allowlist=["localhost", "ollama.partner.example"])
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 11434))],
+    ):
+        with pytest.raises(ValueError, match="Outbound connection blocked"):
+            transport_multi.handle_request(req_v4)
+
+        # Conversely, a request explicitly targeting localhost IS allowed
+        req_local = httpx.Request("GET", "http://localhost:11434/v1/models")
+        with patch.object(httpx.HTTPTransport, "handle_request", return_value=MagicMock()):
+            resp = transport_multi.handle_request(req_local)
+            assert resp is not None
+
+    # When allowlist is empty in production, requests targeting localhost must be blocked
+    transport_empty = SSRFSafeTransport(allowlist=[])
+    req_local_empty = httpx.Request("GET", "http://localhost:11434/v1/models")
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 11434))],
+    ):
+        with pytest.raises(ValueError, match="Outbound connection blocked"):
+            transport_empty.handle_request(req_local_empty)
+
 
 def test_offline_allowlisted_sidecar_endpoint(settings):
     import socket
@@ -2324,7 +2350,19 @@ def test_accounts_forms_endpoint_safety(settings):
     settings.OLLAMA_ALLOWED_HOSTS = ["ollama.prod.example"]
     assert is_safe_ollama_endpoint("127.0.0.1") is False
 
-    # 4. Fallback when OLLAMA_ALLOWED_HOSTS is None
+    # 4. Default settings: OLLAMA_ALLOWED_HOSTS is [] (empty list)
+    settings.OLLAMA_ALLOWED_HOSTS = []
+    settings.DEBUG = False
+    assert is_safe_ollama_endpoint("8.8.8.8") is True
+    from accounts.forms import validate_llm_api_base
+
+    valid_base = validate_llm_api_base("custom", "https://8.8.8.8/v1")
+    assert valid_base == "https://8.8.8.8/v1"
+    assert is_safe_ollama_endpoint("10.0.0.1") is False
+    assert is_safe_ollama_endpoint("127.0.0.1") is False
+    assert is_safe_ollama_endpoint("localhost") is False
+
+    # 5. Fallback when OLLAMA_ALLOWED_HOSTS is None
     settings.OLLAMA_ALLOWED_HOSTS = None
     settings.DEBUG = True
     assert is_safe_ollama_endpoint("localhost") is True
