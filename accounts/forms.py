@@ -80,8 +80,6 @@ def is_safe_ollama_endpoint(hostname: str) -> bool:
             ip = ipaddress.ip_address(target_host)
             if is_restricted_ip(ip):
                 return False
-            if ip.is_loopback and not loopback_allowed:
-                return False
             return True
         except ValueError:
             # Target is an allowlisted hostname (e.g. Docker sidecar 'ollama').

@@ -2281,6 +2281,16 @@ def test_dns_rebinding_ssrf_prevention():
         with pytest.raises(ValueError, match="Outbound connection blocked"):
             transport_empty.handle_request(req_local_empty)
 
+    # Symmetrical loopback allowlist: allowlist=["127.0.0.1"] allows request to localhost
+    transport_ip_allowlist = SSRFSafeTransport(allowlist=["127.0.0.1"])
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 11434))],
+    ):
+        with patch.object(httpx.HTTPTransport, "handle_request", return_value=MagicMock()):
+            resp_sym = transport_ip_allowlist.handle_request(req_local)
+            assert resp_sym is not None
+
 
 def test_offline_allowlisted_sidecar_endpoint(settings):
     import socket
@@ -2345,6 +2355,10 @@ def test_accounts_forms_endpoint_safety(settings):
     assert is_safe_ollama_endpoint("169.254.169.254") is False
     # 127.0.0.1 is allowlisted
     assert is_safe_ollama_endpoint("127.0.0.1") is True
+
+    # Explicitly allowlisted non-standard loopback address (e.g. 127.0.0.2)
+    settings.OLLAMA_ALLOWED_HOSTS = ["127.0.0.2"]
+    assert is_safe_ollama_endpoint("127.0.0.2") is True
 
     # Allowlist without loopback in production blocks loopback
     settings.OLLAMA_ALLOWED_HOSTS = ["ollama.prod.example"]

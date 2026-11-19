@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 
 litellm.telemetry = False
 litellm.suppress_debug_info = True
+litellm.disable_end_user_cost_tracking = True
+litellm.turn_off_message_logging = True
 
 
 class SSRFSafeTransport(httpx.HTTPTransport):
@@ -56,8 +58,8 @@ class SSRFSafeTransport(httpx.HTTPTransport):
 
         # Check explicit hostname allowlist
         is_allowlisted = original_host in self.allowlist or (
-            "localhost" in self.allowlist
-            and original_host in LOOPBACK_HOSTS
+            original_host in LOOPBACK_HOSTS
+            and bool(self.allowlist & LOOPBACK_HOSTS)
         )
         is_debug = bool(getattr(settings, "DEBUG", False))
         loopback_allowed = is_debug or (

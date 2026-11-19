@@ -37,6 +37,10 @@ testpaths = ["tests"]
 norecursedirs = [".venv", "venv", ".git", "ansible"]
 python_files = ["tests.py", "test_*.py", "*_tests.py"]
 addopts = "-p no:cacheprovider"
+filterwarnings = [
+    "ignore:.*ReadOnly.*:UserWarning",
+    "ignore:There is no current event loop:DeprecationWarning",
+]
 
 [tool.mypy]
 ignore_missing_imports = true
