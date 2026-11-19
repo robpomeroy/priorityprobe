@@ -80,6 +80,49 @@ WSGI_APPLICATION = "config.wsgi.application"
 # Database configuration: defaults to SQLite, supports MariaDB/MySQL via env
 DB_ENGINE = os.environ.get("DATABASE_ENGINE", "sqlite").lower()
 
+def migrate_legacy_sqlite_database(
+    user_data_dir: Path | str, legacy_temp_dir: Path | str
+) -> Path:
+    """Migrate legacy SQLite database from temp directory to user data directory.
+
+    Recovers any hot journals and creates a consistent destination database
+    via SQLite's backup API. Staged in a temporary file and published atomically.
+    Aborts startup if migration fails to prevent data loss.
+    """
+    user_data_path = Path(user_data_dir)
+    user_data_path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    sqlite_db_path = user_data_path / "prioritysuite_dev.sqlite3"
+    legacy_temp_db = Path(legacy_temp_dir) / "prioritysuite_dev.sqlite3"
+
+    if not sqlite_db_path.exists() and legacy_temp_db.is_file():
+        temp_target = sqlite_db_path.with_suffix(".tmp")
+        try:
+            import sqlite3
+
+            source_conn = sqlite3.connect(str(legacy_temp_db))
+            try:
+                dest_conn = sqlite3.connect(str(temp_target))
+                try:
+                    source_conn.backup(dest_conn)
+                finally:
+                    dest_conn.close()
+            finally:
+                source_conn.close()
+            temp_target.replace(sqlite_db_path)
+        except Exception as err:
+            if temp_target.exists():
+                try:
+                    temp_target.unlink()
+                except OSError:
+                    pass
+            raise RuntimeError(
+                f"Failed to migrate legacy SQLite database from {legacy_temp_db} to "
+                f"{sqlite_db_path}: {err}"
+            ) from err
+
+    return sqlite_db_path
+
+
 if DB_ENGINE in ("mysql", "mariadb"):
     DATABASES = {
         "default": {
@@ -104,18 +147,8 @@ else:
     if not sqlite_env_path:
         if str(BASE_DIR).startswith("\\\\"):
             user_data_dir = Path.home() / ".local" / "share" / "prioritysuite"
-            user_data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-            sqlite_db_path = user_data_dir / "prioritysuite_dev.sqlite3"
-            # Migrate pre-existing database from former TEMP location if present
             legacy_temp_dir = os.environ.get("TEMP") or tempfile.gettempdir()
-            legacy_temp_db = Path(legacy_temp_dir) / "prioritysuite_dev.sqlite3"
-            if not sqlite_db_path.exists() and legacy_temp_db.is_file():
-                try:
-                    import shutil
-
-                    shutil.copy2(legacy_temp_db, sqlite_db_path)
-                except OSError:
-                    pass
+            sqlite_db_path = migrate_legacy_sqlite_database(user_data_dir, legacy_temp_dir)
         else:
             sqlite_db_path = default_sqlite_path
     else:

@@ -2341,34 +2341,56 @@ def test_is_loopback_host():
     assert is_loopback_host("8.8.8.8") is False
 
 
-def test_unc_sqlite_database_migration(tmp_path, monkeypatch):
-    import shutil
-    from pathlib import Path
+def test_unc_sqlite_database_migration(tmp_path):
+    import sqlite3
 
+    from config.settings import migrate_legacy_sqlite_database
+
+    user_data_dir = tmp_path / "user_data"
     temp_dir = tmp_path / "legacy_temp"
     temp_dir.mkdir()
     legacy_db = temp_dir / "prioritysuite_dev.sqlite3"
-    legacy_db.write_text("dummy-sqlite-data")
 
-    fake_home = tmp_path / "home"
-    fake_home.mkdir()
+    # 1. Create a valid legacy SQLite database with table and data
+    src_conn = sqlite3.connect(str(legacy_db))
+    src_conn.execute("CREATE TABLE test_data (id INT, val TEXT);")
+    src_conn.execute("INSERT INTO test_data VALUES (1, 'initial_val');")
+    src_conn.commit()
+    src_conn.close()
 
-    monkeypatch.setenv("TEMP", str(temp_dir))
-    monkeypatch.setenv("SQLITE_PATH", "")
+    # Migrate legacy database to user data directory
+    result_path = migrate_legacy_sqlite_database(user_data_dir, temp_dir)
+    assert result_path.exists()
+    assert result_path == user_data_dir / "prioritysuite_dev.sqlite3"
 
-    unc_base_dir = Path(r"\\server\share\prioritysuite")
-    assert str(unc_base_dir).startswith(r"\\")
+    # Verify contents of migrated database
+    dest_conn = sqlite3.connect(str(result_path))
+    rows = dest_conn.execute("SELECT id, val FROM test_data;").fetchall()
+    dest_conn.close()
+    assert rows == [(1, "initial_val")]
 
-    user_data_dir = fake_home / ".local" / "share" / "prioritysuite"
-    user_data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-    sqlite_db_path = user_data_dir / "prioritysuite_dev.sqlite3"
-    legacy_temp_db = Path(temp_dir) / "prioritysuite_dev.sqlite3"
+    # 2. When destination already exists, helper must leave it unchanged
+    src_conn2 = sqlite3.connect(str(legacy_db))
+    src_conn2.execute("UPDATE test_data SET val = 'updated_in_legacy' WHERE id = 1;")
+    src_conn2.commit()
+    src_conn2.close()
 
-    if not sqlite_db_path.exists() and legacy_temp_db.is_file():
-        shutil.copy2(legacy_temp_db, sqlite_db_path)
+    result_path2 = migrate_legacy_sqlite_database(user_data_dir, temp_dir)
+    assert result_path2 == result_path
+    dest_conn2 = sqlite3.connect(str(result_path2))
+    rows2 = dest_conn2.execute("SELECT id, val FROM test_data;").fetchall()
+    dest_conn2.close()
+    assert rows2 == [(1, "initial_val")]
 
-    assert sqlite_db_path.exists()
-    assert sqlite_db_path.read_text() == "dummy-sqlite-data"
+    # 3. Migration failure must raise RuntimeError and clean up temporary staging file
+    failing_user_data = tmp_path / "failing_user_data"
+    with patch("sqlite3.connect", side_effect=sqlite3.OperationalError("disk I/O error")):
+        with pytest.raises(RuntimeError, match="Failed to migrate legacy SQLite database"):
+            migrate_legacy_sqlite_database(failing_user_data, temp_dir)
+
+    target_failed_path = failing_user_data / "prioritysuite_dev.sqlite3"
+    assert not target_failed_path.exists()
+    assert not target_failed_path.with_suffix(".tmp").exists()
 
 
 def test_offline_allowlisted_sidecar_endpoint(settings):
