@@ -23,6 +23,26 @@
     force: true
   become_user: "{{ app_user }}"
 
+- name: Check existing virtual environment Python version
+  ansible.builtin.command:
+    cmd: "{{ app_root }}/.venv/bin/python -c 'import sys; print(sys.version_info[:2])'"
+  register: current_venv_py
+  failed_when: false
+  changed_when: false
+  become_user: "{{ app_user }}"
+
+- name: Check target Python version
+  ansible.builtin.command:
+    cmd: "{{ python_executable | default('/usr/bin/python3.12') }} -c 'import sys; print(sys.version_info[:2])'"
+  register: target_py
+  changed_when: false
+
+- name: Remove outdated virtual environment if Python version differs
+  ansible.builtin.file:
+    path: "{{ app_root }}/.venv"
+    state: absent
+  when: current_venv_py.rc == 0 and current_venv_py.stdout != target_py.stdout
+
 - name: Create Python virtual environment and install requirements
   ansible.builtin.pip:
     requirements: "{{ app_root }}/requirements.txt"

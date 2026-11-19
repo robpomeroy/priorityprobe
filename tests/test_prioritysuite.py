@@ -500,16 +500,18 @@ def test_crypto_custom_key():
         assert cipher is not None
 
 
-def test_crypto_legacy_sha256_backward_compatibility():
+def test_crypto_legacy_sha256_backward_compatibility(settings):
     import base64
     import hashlib
 
     from cryptography.fernet import Fernet
-    from django.conf import settings
 
     from accounts.crypto import decrypt_value
 
-    raw_key = getattr(settings, "ENCRYPTION_KEY", None) or settings.SECRET_KEY
+    # Case 1: Derived from SECRET_KEY when ENCRYPTION_KEY is empty
+    settings.ENCRYPTION_KEY = ""
+    settings.SECRET_KEY = "test-secret-key-12345"
+    raw_key = settings.SECRET_KEY
     legacy_key = base64.urlsafe_b64encode(hashlib.sha256(raw_key.encode("utf-8")).digest())
     legacy_cipher = Fernet(legacy_key)
     secret_text = "sk-legacy-test-api-key-12345"
@@ -518,6 +520,19 @@ def test_crypto_legacy_sha256_backward_compatibility():
     # MultiFernet must seamlessly decrypt ciphertext created with legacy SHA-256 key
     decrypted = decrypt_value(legacy_ciphertext)
     assert decrypted == secret_text
+
+    # Case 2: Direct Fernet ENCRYPTION_KEY with legacy derived fallback
+    direct_key = Fernet.generate_key().decode("utf-8")
+    settings.ENCRYPTION_KEY = direct_key
+    legacy_direct_key = base64.urlsafe_b64encode(
+        hashlib.sha256(direct_key.encode("utf-8")).digest()
+    )
+    legacy_direct_cipher = Fernet(legacy_direct_key)
+    legacy_direct_ciphertext = (
+        legacy_direct_cipher.encrypt(secret_text.encode("utf-8")).decode("utf-8")
+    )
+    decrypted_direct = decrypt_value(legacy_direct_ciphertext)
+    assert decrypted_direct == secret_text
 
 
 def test_ipv6_loopback_not_restricted():
@@ -2291,6 +2306,70 @@ def test_dns_rebinding_ssrf_prevention():
             resp_sym = transport_ip_allowlist.handle_request(req_local)
             assert resp_sym is not None
 
+    # Specific loopback IP allowlist: allowlist=["127.0.0.2"] allows direct request to 127.0.0.2
+    transport_ip2 = SSRFSafeTransport(allowlist=["127.0.0.2"])
+    req_local_ip2 = httpx.Request("GET", "http://127.0.0.2:11434/v1/models")
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.2", 11434))],
+    ):
+        with patch.object(httpx.HTTPTransport, "handle_request", return_value=MagicMock()):
+            resp_ip2 = transport_ip2.handle_request(req_local_ip2)
+            assert resp_ip2 is not None
+
+    # IPv4-mapped loopback rebinding rejection: external host resolving to ::ffff:127.0.0.1 blocked
+    with patch(
+        "socket.getaddrinfo",
+        return_value=[
+            (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("::ffff:127.0.0.1", 11434))
+        ],
+    ):
+        with pytest.raises(ValueError, match="Outbound connection blocked"):
+            transport.handle_request(req_v4)
+
+
+def test_is_loopback_host():
+    from accounts.forms import is_loopback_host
+
+    assert is_loopback_host("localhost") is True
+    assert is_loopback_host("127.0.0.1") is True
+    assert is_loopback_host("127.0.0.2") is True
+    assert is_loopback_host("::1") is True
+    assert is_loopback_host("::ffff:127.0.0.1") is True
+    assert is_loopback_host("example.com") is False
+    assert is_loopback_host("192.168.1.1") is False
+    assert is_loopback_host("8.8.8.8") is False
+
+
+def test_unc_sqlite_database_migration(tmp_path, monkeypatch):
+    import shutil
+    from pathlib import Path
+
+    temp_dir = tmp_path / "legacy_temp"
+    temp_dir.mkdir()
+    legacy_db = temp_dir / "prioritysuite_dev.sqlite3"
+    legacy_db.write_text("dummy-sqlite-data")
+
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+
+    monkeypatch.setenv("TEMP", str(temp_dir))
+    monkeypatch.setenv("SQLITE_PATH", "")
+
+    unc_base_dir = Path(r"\\server\share\prioritysuite")
+    assert str(unc_base_dir).startswith(r"\\")
+
+    user_data_dir = fake_home / ".local" / "share" / "prioritysuite"
+    user_data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    sqlite_db_path = user_data_dir / "prioritysuite_dev.sqlite3"
+    legacy_temp_db = Path(temp_dir) / "prioritysuite_dev.sqlite3"
+
+    if not sqlite_db_path.exists() and legacy_temp_db.is_file():
+        shutil.copy2(legacy_temp_db, sqlite_db_path)
+
+    assert sqlite_db_path.exists()
+    assert sqlite_db_path.read_text() == "dummy-sqlite-data"
+
 
 def test_offline_allowlisted_sidecar_endpoint(settings):
     import socket
@@ -2374,6 +2453,7 @@ def test_accounts_forms_endpoint_safety(settings):
     assert valid_base == "https://8.8.8.8/v1"
     assert is_safe_ollama_endpoint("10.0.0.1") is False
     assert is_safe_ollama_endpoint("127.0.0.1") is False
+    assert is_safe_ollama_endpoint("::ffff:127.0.0.1") is False
     assert is_safe_ollama_endpoint("localhost") is False
 
     # 5. Fallback when OLLAMA_ALLOWED_HOSTS is None

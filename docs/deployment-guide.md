@@ -20,7 +20,9 @@ python manage.py migrate
 python manage.py runserver 127.0.0.1:8000
 ```
 
-By default, PrioritySuite uses SQLite (`db.sqlite3` or temporary path when on network drives), requiring zero database setup.
+By default, PrioritySuite uses SQLite (`db.sqlite3` or local user data path
+`~/.local/share/prioritysuite/` when on network drives), requiring zero
+database setup.
 
 ---
 

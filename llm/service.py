@@ -39,6 +39,7 @@ class SSRFSafeTransport(httpx.HTTPTransport):
         from accounts.forms import (
             CLOUD_METADATA_HOSTS,
             LOOPBACK_HOSTS,
+            is_loopback_host,
             is_restricted_ip,
             is_safe_ollama_endpoint,
         )
@@ -57,13 +58,17 @@ class SSRFSafeTransport(httpx.HTTPTransport):
             )
 
         # Check explicit hostname allowlist
+        is_orig_loopback = is_loopback_host(original_host)
         is_allowlisted = original_host in self.allowlist or (
-            original_host in LOOPBACK_HOSTS
-            and bool(self.allowlist & LOOPBACK_HOSTS)
+            is_orig_loopback and bool(self.allowlist & LOOPBACK_HOSTS)
         )
         is_debug = bool(getattr(settings, "DEBUG", False))
         loopback_allowed = is_debug or (
-            original_host in LOOPBACK_HOSTS and bool(self.allowlist & LOOPBACK_HOSTS)
+            is_orig_loopback
+            and (
+                original_host in self.allowlist
+                or bool(self.allowlist & LOOPBACK_HOSTS)
+            )
         )
 
         # Resolve host to IP addresses (supports dual-stack IPv4/IPv6)
@@ -86,7 +91,9 @@ class SSRFSafeTransport(httpx.HTTPTransport):
                         f"Outbound connection blocked: destination {ip_str} "
                         "is private or restricted."
                     )
-                if ip_obj.is_loopback and not loopback_allowed:
+                mapped_ip = getattr(ip_obj, "ipv4_mapped", None)
+                check_ip = mapped_ip if mapped_ip is not None else ip_obj
+                if check_ip.is_loopback and not loopback_allowed:
                     raise ValueError(
                         f"Outbound connection blocked: destination {ip_str} "
                         "is private or restricted."

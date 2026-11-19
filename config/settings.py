@@ -1,4 +1,5 @@
 import os
+import tempfile
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -105,6 +106,16 @@ else:
             user_data_dir = Path.home() / ".local" / "share" / "prioritysuite"
             user_data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
             sqlite_db_path = user_data_dir / "prioritysuite_dev.sqlite3"
+            # Migrate pre-existing database from former TEMP location if present
+            legacy_temp_dir = os.environ.get("TEMP") or tempfile.gettempdir()
+            legacy_temp_db = Path(legacy_temp_dir) / "prioritysuite_dev.sqlite3"
+            if not sqlite_db_path.exists() and legacy_temp_db.is_file():
+                try:
+                    import shutil
+
+                    shutil.copy2(legacy_temp_db, sqlite_db_path)
+                except OSError:
+                    pass
         else:
             sqlite_db_path = default_sqlite_path
     else:

@@ -33,6 +33,17 @@ LOOPBACK_HOSTS = {
 }
 
 
+def is_loopback_host(host: str) -> bool:
+    if host in LOOPBACK_HOSTS:
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+        mapped = getattr(ip, "ipv4_mapped", None)
+        return (mapped if mapped is not None else ip).is_loopback
+    except ValueError:
+        return False
+
+
 def is_restricted_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     if hasattr(ip, "ipv4_mapped") and ip.ipv4_mapped:
         ip = ip.ipv4_mapped
@@ -87,7 +98,7 @@ def is_safe_ollama_endpoint(hostname: str) -> bool:
             # connection-time IP validation & anti-rebinding are enforced by SSRFSafeTransport.
             return True
 
-    if target_host in LOOPBACK_HOSTS:
+    if is_loopback_host(target_host):
         return loopback_allowed
 
     try:

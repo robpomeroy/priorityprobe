@@ -33,7 +33,7 @@ def get_cipher() -> MultiFernet:
     if raw_key:
         key_bytes = raw_key.encode("utf-8") if isinstance(raw_key, str) else raw_key
         try:
-            return MultiFernet([Fernet(key_bytes)])
+            direct_cipher = Fernet(key_bytes)
         except (ValueError, TypeError):
             # Not a pre-encoded 32-byte urlsafe base64 key; support new HKDF with legacy fallback
             return MultiFernet(
@@ -42,6 +42,12 @@ def get_cipher() -> MultiFernet:
                     Fernet(_derive_legacy_fernet_key(key_bytes)),
                 ]
             )
+        return MultiFernet(
+            [
+                direct_cipher,
+                Fernet(_derive_legacy_fernet_key(key_bytes)),
+            ]
+        )
 
     secret = settings.SECRET_KEY.encode("utf-8")
     return MultiFernet(
