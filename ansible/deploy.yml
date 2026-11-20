@@ -28,14 +28,38 @@
       register: target_py
       changed_when: false
 
-    - name: Upgrade virtual environment if Python version differs
+    - name: Check for existing virtual environment backup
+      ansible.builtin.stat:
+        path: "{{ app_root }}/.venv_backup"
+      register: venv_backup_stat
+      become_user: "{{ app_user }}"
       when: current_venv_py.rc == 0 and current_venv_py.stdout != target_py.stdout
-      block:
-        - name: Back up existing virtual environment before upgrade
-          ansible.builtin.command:
-            cmd: "mv {{ app_root }}/.venv {{ app_root }}/.venv_backup"
-          become_user: "{{ app_user }}"
 
+    - name: Reject upgrade if previous virtual environment backup already exists
+      ansible.builtin.fail:
+        msg: "{{ app_root }}/.venv_backup already exists from an interrupted upgrade. Resolve or remove it before proceeding."
+      when:
+        - current_venv_py.rc == 0
+        - current_venv_py.stdout != target_py.stdout
+        - venv_backup_stat.stat.exists
+
+    - name: Back up existing virtual environment before upgrade
+      ansible.builtin.command:
+        cmd: "mv -T {{ app_root }}/.venv {{ app_root }}/.venv_backup"
+      become_user: "{{ app_user }}"
+      register: venv_backed_up
+      when:
+        - current_venv_py.rc == 0
+        - current_venv_py.stdout != target_py.stdout
+        - not venv_backup_stat.stat.exists
+
+    - name: Build replacement virtual environment and install requirements
+      when:
+        - current_venv_py.rc == 0
+        - current_venv_py.stdout != target_py.stdout
+        - venv_backed_up is defined
+        - venv_backed_up is succeeded
+      block:
         - name: Create upgraded virtual environment and install requirements
           ansible.builtin.pip:
             requirements: "{{ app_root }}/requirements.txt"
@@ -50,11 +74,6 @@
             virtualenv: "{{ app_root }}/.venv"
           become_user: "{{ app_user }}"
 
-        - name: Remove virtual environment backup after successful upgrade
-          ansible.builtin.file:
-            path: "{{ app_root }}/.venv_backup"
-            state: absent
-
       rescue:
         - name: Clean up failed virtual environment
           ansible.builtin.file:
@@ -63,12 +82,23 @@
 
         - name: Restore previous virtual environment after upgrade failure
           ansible.builtin.command:
-            cmd: "mv {{ app_root }}/.venv_backup {{ app_root }}/.venv"
+            cmd: "mv -T {{ app_root }}/.venv_backup {{ app_root }}/.venv"
           become_user: "{{ app_user }}"
 
         - name: Fail task to signal upgrade failure
           ansible.builtin.fail:
             msg: "Virtual environment upgrade failed. Restored previous .venv."
+
+    - name: Remove virtual environment backup after successful upgrade
+      ansible.builtin.file:
+        path: "{{ app_root }}/.venv_backup"
+        state: absent
+      become_user: "{{ app_user }}"
+      when:
+        - current_venv_py.rc == 0
+        - current_venv_py.stdout != target_py.stdout
+        - venv_backed_up is defined
+        - venv_backed_up is succeeded
 
     - name: Install and update Python virtualenv requirements
       ansible.builtin.pip:

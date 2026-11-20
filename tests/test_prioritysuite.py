@@ -2382,7 +2382,7 @@ def test_unc_sqlite_database_migration(tmp_path):
     dest_conn2.close()
     assert rows2 == [(1, "initial_val")]
 
-    # 3. Migration failure must raise RuntimeError and clean up temporary staging file
+    # 3. Migration failure before backup creates staging file
     failing_user_data = tmp_path / "failing_user_data"
     with patch("sqlite3.connect", side_effect=sqlite3.OperationalError("disk I/O error")):
         with pytest.raises(RuntimeError, match="Failed to migrate legacy SQLite database"):
@@ -2390,7 +2390,32 @@ def test_unc_sqlite_database_migration(tmp_path):
 
     target_failed_path = failing_user_data / "prioritysuite_dev.sqlite3"
     assert not target_failed_path.exists()
-    assert not target_failed_path.with_suffix(".tmp").exists()
+    assert list(failing_user_data.glob("*.tmp")) == []
+
+    # 4. Publication failure (Path.replace fails after backup completes):
+    # helper must remove staging file, preserve legacy database, and raise RuntimeError
+    pub_fail_user_data = tmp_path / "pub_fail_user_data"
+    with patch("pathlib.Path.replace", side_effect=OSError("Permission denied")):
+        with pytest.raises(RuntimeError, match="Failed to migrate legacy SQLite database"):
+            migrate_legacy_sqlite_database(pub_fail_user_data, temp_dir)
+
+    pub_failed_target = pub_fail_user_data / "prioritysuite_dev.sqlite3"
+    assert not pub_failed_target.exists()
+    assert list(pub_fail_user_data.glob("*.tmp")) == []
+    assert legacy_db.exists()
+    src_conn3 = sqlite3.connect(str(legacy_db))
+    rows3 = src_conn3.execute("SELECT id, val FROM test_data;").fetchall()
+    src_conn3.close()
+    assert rows3 == [(1, "updated_in_legacy")]
+
+    # 5. Process-shared lock serialization: if destination created while waiting on lock
+    race_user_data = tmp_path / "race_user_data"
+    race_user_data.mkdir()
+    race_target_db = race_user_data / "prioritysuite_dev.sqlite3"
+    race_target_db.write_text("already-migrated")
+    res_race = migrate_legacy_sqlite_database(race_user_data, temp_dir)
+    assert res_race == race_target_db
+    assert race_target_db.read_text() == "already-migrated"
 
 
 def test_offline_allowlisted_sidecar_endpoint(settings):

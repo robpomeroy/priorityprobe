@@ -1,5 +1,6 @@
 import os
 import tempfile
+import uuid
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -85,7 +86,8 @@ def migrate_legacy_sqlite_database(
 ) -> Path:
     """Migrate legacy SQLite database from temp directory to user data directory.
 
-    Recovers any hot journals and creates a consistent destination database
+    Serialises migration with a process-shared lock to prevent concurrent worker
+    races. Recovers hot journals and creates a consistent destination database
     via SQLite's backup API. Staged in a temporary file and published atomically.
     Aborts startup if migration fails to prevent data loss.
     """
@@ -94,31 +96,57 @@ def migrate_legacy_sqlite_database(
     sqlite_db_path = user_data_path / "prioritysuite_dev.sqlite3"
     legacy_temp_db = Path(legacy_temp_dir) / "prioritysuite_dev.sqlite3"
 
-    if not sqlite_db_path.exists() and legacy_temp_db.is_file():
-        temp_target = sqlite_db_path.with_suffix(".tmp")
-        try:
-            import sqlite3
+    # Fast-path check: return immediately if target exists or no legacy DB
+    if sqlite_db_path.exists() or not legacy_temp_db.is_file():
+        return sqlite_db_path
 
-            source_conn = sqlite3.connect(str(legacy_temp_db))
+    lock_path = user_data_path / ".migration.lock"
+    with open(lock_path, "a") as lock_file:
+        try:
+            import fcntl
+
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        except (ImportError, OSError):
+            pass
+
+        try:
+            # Recheck destination existence after acquiring process lock
+            if sqlite_db_path.exists() or not legacy_temp_db.is_file():
+                return sqlite_db_path
+
+            temp_target = sqlite_db_path.with_name(
+                f"prioritysuite_dev_{os.getpid()}_{uuid.uuid4().hex[:8]}.tmp"
+            )
             try:
-                dest_conn = sqlite3.connect(str(temp_target))
+                import sqlite3
+
+                source_conn = sqlite3.connect(str(legacy_temp_db))
                 try:
-                    source_conn.backup(dest_conn)
+                    dest_conn = sqlite3.connect(str(temp_target))
+                    try:
+                        source_conn.backup(dest_conn)
+                    finally:
+                        dest_conn.close()
                 finally:
-                    dest_conn.close()
-            finally:
-                source_conn.close()
-            temp_target.replace(sqlite_db_path)
-        except Exception as err:
-            if temp_target.exists():
-                try:
-                    temp_target.unlink()
-                except OSError:
-                    pass
-            raise RuntimeError(
-                f"Failed to migrate legacy SQLite database from {legacy_temp_db} to "
-                f"{sqlite_db_path}: {err}"
-            ) from err
+                    source_conn.close()
+                temp_target.replace(sqlite_db_path)
+            except Exception as err:
+                if temp_target.exists():
+                    try:
+                        temp_target.unlink()
+                    except OSError:
+                        pass
+                raise RuntimeError(
+                    f"Failed to migrate legacy SQLite database from {legacy_temp_db} to "
+                    f"{sqlite_db_path}: {err}"
+                ) from err
+        finally:
+            try:
+                import fcntl
+
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            except (ImportError, OSError):
+                pass
 
     return sqlite_db_path
 
