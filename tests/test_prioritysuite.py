@@ -1,4 +1,5 @@
 import os
+import sys
 from typing import Any, cast
 
 os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
@@ -2440,7 +2441,14 @@ def test_unc_sqlite_database_migration(tmp_path):
 
     # 6. Lock acquisition failure must halt startup and raise RuntimeError
     lock_fail_user_data = tmp_path / "lock_fail_user_data"
-    with patch("fcntl.flock", side_effect=OSError("Locking failed")):
+    if sys.platform == "win32":
+        mock_win_msvcrt = MagicMock()
+        mock_win_msvcrt.locking.side_effect = OSError("Locking failed")
+        lock_patch = patch.dict("sys.modules", {"msvcrt": mock_win_msvcrt})
+    else:
+        lock_patch = patch("fcntl.flock", side_effect=OSError("Locking failed"))
+
+    with lock_patch:
         with pytest.raises(RuntimeError, match="Failed to acquire database migration lock"):
             migrate_legacy_sqlite_database(lock_fail_user_data, temp_dir)
 
