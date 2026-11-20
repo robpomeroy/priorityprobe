@@ -1,4 +1,6 @@
+import contextlib
 import os
+import sys
 import tempfile
 import uuid
 from pathlib import Path
@@ -81,6 +83,49 @@ WSGI_APPLICATION = "config.wsgi.application"
 # Database configuration: defaults to SQLite, supports MariaDB/MySQL via env
 DB_ENGINE = os.environ.get("DATABASE_ENGINE", "sqlite").lower()
 
+@contextlib.contextmanager
+def migration_lock(lock_path: Path):
+    """Process-shared advisory file lock supporting POSIX (fcntl) and Windows (msvcrt).
+
+    Raises RuntimeError if lock acquisition fails to prevent uncoordinated concurrent migrations.
+    """
+    with open(lock_path, "a+b") as lock_file:
+        if sys.platform == "win32":
+            try:
+                import msvcrt
+
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+            except OSError as err:
+                raise RuntimeError(
+                    f"Failed to acquire database migration lock on {lock_path}: {err}"
+                ) from err
+            try:
+                yield
+            finally:
+                try:
+                    lock_file.seek(0)
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                except OSError:
+                    pass
+        else:
+            try:
+                import fcntl
+
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            except OSError as err:
+                raise RuntimeError(
+                    f"Failed to acquire database migration lock on {lock_path}: {err}"
+                ) from err
+            try:
+                yield
+            finally:
+                try:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                except OSError:
+                    pass
+
+
 def migrate_legacy_sqlite_database(
     user_data_dir: Path | str, legacy_temp_dir: Path | str
 ) -> Path:
@@ -101,52 +146,43 @@ def migrate_legacy_sqlite_database(
         return sqlite_db_path
 
     lock_path = user_data_path / ".migration.lock"
-    with open(lock_path, "a") as lock_file:
-        try:
-            import fcntl
+    with migration_lock(lock_path):
+        # Recheck destination existence after acquiring process lock
+        if sqlite_db_path.exists() or not legacy_temp_db.is_file():
+            return sqlite_db_path
 
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        except (ImportError, OSError):
-            pass
-
+        temp_target = sqlite_db_path.with_name(
+            f"prioritysuite_dev_{os.getpid()}_{uuid.uuid4().hex[:8]}.tmp"
+        )
         try:
-            # Recheck destination existence after acquiring process lock
-            if sqlite_db_path.exists() or not legacy_temp_db.is_file():
+            import sqlite3
+
+            source_conn = sqlite3.connect(str(legacy_temp_db))
+            try:
+                dest_conn = sqlite3.connect(str(temp_target))
+                try:
+                    source_conn.backup(dest_conn)
+                finally:
+                    dest_conn.close()
+            finally:
+                source_conn.close()
+
+            # Verify destination still does not exist immediately before publishing
+            if sqlite_db_path.exists():
+                temp_target.unlink()
                 return sqlite_db_path
 
-            temp_target = sqlite_db_path.with_name(
-                f"prioritysuite_dev_{os.getpid()}_{uuid.uuid4().hex[:8]}.tmp"
-            )
-            try:
-                import sqlite3
-
-                source_conn = sqlite3.connect(str(legacy_temp_db))
+            temp_target.replace(sqlite_db_path)
+        except Exception as err:
+            if temp_target.exists():
                 try:
-                    dest_conn = sqlite3.connect(str(temp_target))
-                    try:
-                        source_conn.backup(dest_conn)
-                    finally:
-                        dest_conn.close()
-                finally:
-                    source_conn.close()
-                temp_target.replace(sqlite_db_path)
-            except Exception as err:
-                if temp_target.exists():
-                    try:
-                        temp_target.unlink()
-                    except OSError:
-                        pass
-                raise RuntimeError(
-                    f"Failed to migrate legacy SQLite database from {legacy_temp_db} to "
-                    f"{sqlite_db_path}: {err}"
-                ) from err
-        finally:
-            try:
-                import fcntl
-
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-            except (ImportError, OSError):
-                pass
+                    temp_target.unlink()
+                except OSError:
+                    pass
+            raise RuntimeError(
+                f"Failed to migrate legacy SQLite database from {legacy_temp_db} to "
+                f"{sqlite_db_path}: {err}"
+            ) from err
 
     return sqlite_db_path
 

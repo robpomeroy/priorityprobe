@@ -2343,6 +2343,7 @@ def test_is_loopback_host():
 
 def test_unc_sqlite_database_migration(tmp_path):
     import sqlite3
+    from pathlib import Path
 
     from config.settings import migrate_legacy_sqlite_database
 
@@ -2408,14 +2409,67 @@ def test_unc_sqlite_database_migration(tmp_path):
     src_conn3.close()
     assert rows3 == [(1, "updated_in_legacy")]
 
-    # 5. Process-shared lock serialization: if destination created while waiting on lock
+    # 5. Process-shared lock serialization: simulate destination appearing
+    # during exclusive lock acquisition after the initial check passes.
+    # Helper must preserve that destination and not initiate a backup.
     race_user_data = tmp_path / "race_user_data"
     race_user_data.mkdir()
     race_target_db = race_user_data / "prioritysuite_dev.sqlite3"
-    race_target_db.write_text("already-migrated")
-    res_race = migrate_legacy_sqlite_database(race_user_data, temp_dir)
+    assert not race_target_db.exists()
+
+    import contextlib
+
+    from config.settings import migration_lock
+
+    original_migration_lock = migration_lock
+
+    @contextlib.contextmanager
+    def mock_migration_lock(lock_path):
+        race_target_db.write_text("published-by-another-worker")
+        with original_migration_lock(lock_path):
+            yield
+
+    with patch("config.settings.migration_lock", side_effect=mock_migration_lock):
+        with patch("sqlite3.connect") as mock_connect:
+            res_race = migrate_legacy_sqlite_database(race_user_data, temp_dir)
+            mock_connect.assert_not_called()
+
     assert res_race == race_target_db
-    assert race_target_db.read_text() == "already-migrated"
+    assert race_target_db.read_text() == "published-by-another-worker"
+    assert list(race_user_data.glob("*.tmp")) == []
+
+    # 6. Lock acquisition failure must halt startup and raise RuntimeError
+    lock_fail_user_data = tmp_path / "lock_fail_user_data"
+    with patch("fcntl.flock", side_effect=OSError("Locking failed")):
+        with pytest.raises(RuntimeError, match="Failed to acquire database migration lock"):
+            migrate_legacy_sqlite_database(lock_fail_user_data, temp_dir)
+
+    # 7. Destination appearing immediately before atomic replace: unlinks staging, avoids overwrite
+    pre_pub_user_data = tmp_path / "pre_pub_user_data"
+    pre_pub_target = pre_pub_user_data / "prioritysuite_dev.sqlite3"
+    with patch.object(Path, "exists", side_effect=[False, False, True, False, False]):
+        res_pre_pub = migrate_legacy_sqlite_database(pre_pub_user_data, temp_dir)
+    assert res_pre_pub == pre_pub_target
+
+
+def test_migration_lock_windows(tmp_path):
+    from config.settings import migration_lock
+
+    mock_msvcrt = MagicMock()
+    mock_msvcrt.LK_LOCK = 1
+    mock_msvcrt.LK_UNLCK = 2
+    lock_file = tmp_path / "win_lock.lock"
+
+    with patch("sys.platform", "win32"), patch.dict("sys.modules", {"msvcrt": mock_msvcrt}):
+        with migration_lock(lock_file):
+            assert mock_msvcrt.locking.call_count == 1
+        assert mock_msvcrt.locking.call_count == 2
+
+    mock_msvcrt.locking.side_effect = OSError("Windows file lock error")
+    with patch("sys.platform", "win32"), patch.dict("sys.modules", {"msvcrt": mock_msvcrt}):
+        with pytest.raises(RuntimeError, match="Failed to acquire database migration lock"):
+            with migration_lock(lock_file):
+                pass
 
 
 def test_offline_allowlisted_sidecar_endpoint(settings):
