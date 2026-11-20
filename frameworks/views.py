@@ -1,14 +1,17 @@
 from datetime import timedelta
-from django.shortcuts import render, get_object_or_404, redirect
-from django.contrib.auth.decorators import login_required
+
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.http import HttpResponse, HttpResponseForbidden
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
-from frameworks.models import Framework, Domain, Why, Objective, Goal, StatusChoices
-from frameworks.forms import FrameworkForm, DomainForm, WhyForm, ObjectiveForm, GoalForm
-from frameworks.services import seed_sample_framework, remove_sample_frameworks
+
+from frameworks.forms import DomainForm, GoalForm, ObjectiveForm, WhyForm
+from frameworks.models import Domain, Framework, Goal, Objective, StatusChoices, Why
+from frameworks.services import remove_sample_frameworks, seed_sample_framework
+
 
 def _get_user_framework(user, framework_id=None):
     if framework_id:
@@ -18,28 +21,40 @@ def _get_user_framework(user, framework_id=None):
         fw = Framework.objects.create(owner=user, name="My Personal Priorities")
     return fw
 
+
 @login_required
 def workspace_view(request, framework_id=None):
     framework = _get_user_framework(request.user, framework_id)
     user_frameworks = Framework.objects.filter(owner=request.user)
     domains = framework.domains.prefetch_related(
-        "whys", "primary_objectives__whys", "primary_objectives__related_domains",
-        "primary_goals__objectives", "primary_goals__related_domains"
+        "whys",
+        "primary_objectives__whys",
+        "primary_objectives__related_domains",
+        "primary_goals__objectives",
+        "primary_goals__related_domains",
     ).all()
-    
-    return render(request, "frameworks/workspace.html", {
-        "framework": framework,
-        "user_frameworks": user_frameworks,
-        "domains": domains,
-    })
+
+    return render(
+        request,
+        "frameworks/workspace.html",
+        {
+            "framework": framework,
+            "user_frameworks": user_frameworks,
+            "domains": domains,
+        },
+    )
+
 
 @login_required
 def seed_sample_view(request):
     if request.method == "POST":
         fw = seed_sample_framework(request.user)
-        messages.success(request, f"Loaded sample framework '{fw.name}'. You can modify or remove it anytime.")
+        messages.success(
+            request, f"Loaded sample framework '{fw.name}'. You can modify or remove it anytime."
+        )
         return redirect("frameworks:workspace_detail", framework_id=fw.id)
     return redirect("frameworks:workspace")
+
 
 @login_required
 def remove_sample_view(request):
@@ -48,6 +63,7 @@ def remove_sample_view(request):
         messages.info(request, f"Removed {count} sample framework(s).")
         return redirect("frameworks:workspace")
     return redirect("frameworks:workspace")
+
 
 @login_required
 def domain_create_view(request, framework_id):
@@ -64,6 +80,7 @@ def domain_create_view(request, framework_id):
         form = DomainForm()
     return render(request, "frameworks/form_modal.html", {"form": form, "title": "Add New Domain"})
 
+
 @login_required
 def domain_edit_view(request, domain_id):
     domain = get_object_or_404(Domain, id=domain_id, framework__owner=request.user)
@@ -75,7 +92,12 @@ def domain_edit_view(request, domain_id):
             return redirect("frameworks:workspace_detail", framework_id=domain.framework_id)
     else:
         form = DomainForm(instance=domain)
-    return render(request, "frameworks/form_modal.html", {"form": form, "title": f"Edit Domain: {domain.name}"})
+    return render(
+        request,
+        "frameworks/form_modal.html",
+        {"form": form, "title": f"Edit Domain: {domain.name}"},
+    )
+
 
 @login_required
 def domain_delete_view(request, domain_id):
@@ -86,7 +108,12 @@ def domain_delete_view(request, domain_id):
         domain.delete()
         messages.info(request, f"Domain '{name}' and its child items were deleted.")
         return redirect("frameworks:workspace_detail", framework_id=fw_id)
-    return render(request, "frameworks/confirm_delete.html", {"item_type": "Domain", "item_name": domain.name})
+    return render(
+        request,
+        "frameworks/confirm_delete.html",
+        {"item_type": "Domain", "item_name": domain.name},
+    )
+
 
 @login_required
 def why_create_view(request, domain_id):
@@ -101,11 +128,16 @@ def why_create_view(request, domain_id):
             return redirect("frameworks:workspace_detail", framework_id=domain.framework_id)
     else:
         form = WhyForm()
-    return render(request, "frameworks/form_modal.html", {
-        "form": form,
-        "title": f"Add Why in {domain.name}",
-        "guidance": "Why does this area matter to you? Why should anything happen here?",
-    })
+    return render(
+        request,
+        "frameworks/form_modal.html",
+        {
+            "form": form,
+            "title": f"Add Why in {domain.name}",
+            "guidance": "Why does this area matter to you? Why should anything happen here?",
+        },
+    )
+
 
 @login_required
 def why_edit_view(request, why_id):
@@ -120,6 +152,7 @@ def why_edit_view(request, why_id):
         form = WhyForm(instance=why)
     return render(request, "frameworks/form_modal.html", {"form": form, "title": "Edit Why"})
 
+
 @login_required
 def why_delete_view(request, why_id):
     why = get_object_or_404(Why, id=why_id, domain__framework__owner=request.user)
@@ -128,7 +161,10 @@ def why_delete_view(request, why_id):
         why.delete()
         messages.info(request, "Why deleted.")
         return redirect("frameworks:workspace_detail", framework_id=fw_id)
-    return render(request, "frameworks/confirm_delete.html", {"item_type": "Why", "item_name": why.title})
+    return render(
+        request, "frameworks/confirm_delete.html", {"item_type": "Why", "item_name": why.title}
+    )
+
 
 @login_required
 def objective_create_view(request, framework_id):
@@ -143,15 +179,22 @@ def objective_create_view(request, framework_id):
             return redirect("frameworks:workspace_detail", framework_id=framework.id)
     else:
         form = ObjectiveForm(framework=framework, initial=initial)
-    return render(request, "frameworks/form_modal.html", {
-        "form": form,
-        "title": "Add New Objective",
-        "guidance": "What would you like your Whys to lead to?",
-    })
+    return render(
+        request,
+        "frameworks/form_modal.html",
+        {
+            "form": form,
+            "title": "Add New Objective",
+            "guidance": "What would you like your Whys to lead to?",
+        },
+    )
+
 
 @login_required
 def objective_edit_view(request, objective_id):
-    objective = get_object_or_404(Objective, id=objective_id, primary_domain__framework__owner=request.user)
+    objective = get_object_or_404(
+        Objective, id=objective_id, primary_domain__framework__owner=request.user
+    )
     framework = objective.primary_domain.framework
     if request.method == "POST":
         form = ObjectiveForm(request.POST, instance=objective, framework=framework)
@@ -163,15 +206,23 @@ def objective_edit_view(request, objective_id):
         form = ObjectiveForm(instance=objective, framework=framework)
     return render(request, "frameworks/form_modal.html", {"form": form, "title": "Edit Objective"})
 
+
 @login_required
 def objective_delete_view(request, objective_id):
-    objective = get_object_or_404(Objective, id=objective_id, primary_domain__framework__owner=request.user)
+    objective = get_object_or_404(
+        Objective, id=objective_id, primary_domain__framework__owner=request.user
+    )
     fw_id = objective.primary_domain.framework_id
     if request.method == "POST":
         objective.delete()
         messages.info(request, "Objective deleted.")
         return redirect("frameworks:workspace_detail", framework_id=fw_id)
-    return render(request, "frameworks/confirm_delete.html", {"item_type": "Objective", "item_name": objective.title})
+    return render(
+        request,
+        "frameworks/confirm_delete.html",
+        {"item_type": "Objective", "item_name": objective.title},
+    )
+
 
 @login_required
 def goal_create_view(request, framework_id):
@@ -186,11 +237,16 @@ def goal_create_view(request, framework_id):
             return redirect("frameworks:workspace_detail", framework_id=framework.id)
     else:
         form = GoalForm(framework=framework, initial=initial)
-    return render(request, "frameworks/form_modal.html", {
-        "form": form,
-        "title": "Add New Goal",
-        "guidance": "What specifically will you do or achieve?",
-    })
+    return render(
+        request,
+        "frameworks/form_modal.html",
+        {
+            "form": form,
+            "title": "Add New Goal",
+            "guidance": "What specifically will you do or achieve?",
+        },
+    )
+
 
 @login_required
 def goal_edit_view(request, goal_id):
@@ -206,6 +262,7 @@ def goal_edit_view(request, goal_id):
         form = GoalForm(instance=goal, framework=framework)
     return render(request, "frameworks/form_modal.html", {"form": form, "title": "Edit Goal"})
 
+
 @login_required
 def goal_delete_view(request, goal_id):
     goal = get_object_or_404(Goal, id=goal_id, primary_domain__framework__owner=request.user)
@@ -214,7 +271,10 @@ def goal_delete_view(request, goal_id):
         goal.delete()
         messages.info(request, "Goal deleted.")
         return redirect("frameworks:workspace_detail", framework_id=fw_id)
-    return render(request, "frameworks/confirm_delete.html", {"item_type": "Goal", "item_name": goal.title})
+    return render(
+        request, "frameworks/confirm_delete.html", {"item_type": "Goal", "item_name": goal.title}
+    )
+
 
 def _reorder_sibling_items(items, target_item, direction):
     idx = items.index(target_item)
@@ -231,6 +291,7 @@ def _reorder_sibling_items(items, target_item, direction):
                 item.display_order = new_order
                 item.save(update_fields=["display_order"])
 
+
 def _handle_status_update(request, item, label):
     new_status = request.POST.get("status")
     if new_status in StatusChoices.values:
@@ -246,6 +307,7 @@ def _handle_status_update(request, item, label):
         return redirect(next_url)
     return redirect("frameworks:workspace_detail", framework_id=item.primary_domain.framework_id)
 
+
 @login_required
 def domain_move_view(request, domain_id, direction):
     if request.method != "POST":
@@ -257,6 +319,7 @@ def domain_move_view(request, domain_id, direction):
         _reorder_sibling_items(all_domains, domain, direction)
 
     return redirect("frameworks:workspace_detail", framework_id=domain.framework_id)
+
 
 @login_required
 def why_move_view(request, why_id, direction):
@@ -270,12 +333,16 @@ def why_move_view(request, why_id, direction):
 
     return redirect("frameworks:workspace_detail", framework_id=why.domain.framework_id)
 
+
 @login_required
 def objective_status_view(request, objective_id):
     if request.method != "POST":
         return HttpResponseForbidden()
-    obj = get_object_or_404(Objective, id=objective_id, primary_domain__framework__owner=request.user)
+    obj = get_object_or_404(
+        Objective, id=objective_id, primary_domain__framework__owner=request.user
+    )
     return _handle_status_update(request, obj, "Objective")
+
 
 @login_required
 def goal_status_view(request, goal_id):
@@ -284,17 +351,22 @@ def goal_status_view(request, goal_id):
     goal = get_object_or_404(Goal, id=goal_id, primary_domain__framework__owner=request.user)
     return _handle_status_update(request, goal, "Goal")
 
+
 @login_required
 def review_view(request, framework_id=None):
     framework = _get_user_framework(request.user, framework_id)
     status_filter = request.GET.get("status", "")
     age_filter = request.GET.get("age", "")
     today = timezone.now().date()
-    
+
     whys = Why.objects.filter(domain__framework=framework).select_related("domain")
-    objectives = Objective.objects.filter(primary_domain__framework=framework).select_related("primary_domain")
-    goals = Goal.objects.filter(primary_domain__framework=framework).select_related("primary_domain")
-    
+    objectives = Objective.objects.filter(primary_domain__framework=framework).select_related(
+        "primary_domain"
+    )
+    goals = Goal.objects.filter(primary_domain__framework=framework).select_related(
+        "primary_domain"
+    )
+
     if status_filter:
         objectives = objectives.filter(status=status_filter)
         goals = goals.filter(status=status_filter)
@@ -310,15 +382,20 @@ def review_view(request, framework_id=None):
         objectives = objectives.filter(last_reviewed_at__isnull=False, last_reviewed_at__lt=cutoff)
         goals = goals.filter(last_reviewed_at__isnull=False, last_reviewed_at__lt=cutoff)
 
-    return render(request, "frameworks/review.html", {
-        "framework": framework,
-        "whys": whys,
-        "objectives": objectives,
-        "goals": goals,
-        "status_filter": status_filter,
-        "age_filter": age_filter,
-        "StatusChoices": StatusChoices,
-    })
+    return render(
+        request,
+        "frameworks/review.html",
+        {
+            "framework": framework,
+            "whys": whys,
+            "objectives": objectives,
+            "goals": goals,
+            "status_filter": status_filter,
+            "age_filter": age_filter,
+            "StatusChoices": StatusChoices,
+        },
+    )
+
 
 @login_required
 def mark_all_reviewed_view(request, framework_id):
@@ -328,10 +405,13 @@ def mark_all_reviewed_view(request, framework_id):
     today = timezone.now().date()
     with transaction.atomic():
         Why.objects.filter(domain__framework=framework).update(last_reviewed_at=today)
-        Objective.objects.filter(primary_domain__framework=framework).update(last_reviewed_at=today)
+        Objective.objects.filter(primary_domain__framework=framework).update(
+            last_reviewed_at=today
+        )
         Goal.objects.filter(primary_domain__framework=framework).update(last_reviewed_at=today)
     messages.success(request, f"Marked all framework items as reviewed on {today}.")
     return redirect("frameworks:review_detail", framework_id=framework.id)
+
 
 @login_required
 def mark_reviewed_view(request, item_type, item_id):
@@ -340,9 +420,13 @@ def mark_reviewed_view(request, item_type, item_id):
         if item_type == "why":
             item = get_object_or_404(Why, id=item_id, domain__framework__owner=request.user)
         elif item_type == "objective":
-            item = get_object_or_404(Objective, id=item_id, primary_domain__framework__owner=request.user)
+            item = get_object_or_404(
+                Objective, id=item_id, primary_domain__framework__owner=request.user
+            )
         elif item_type == "goal":
-            item = get_object_or_404(Goal, id=item_id, primary_domain__framework__owner=request.user)
+            item = get_object_or_404(
+                Goal, id=item_id, primary_domain__framework__owner=request.user
+            )
         else:
             return HttpResponseForbidden()
         item.last_reviewed_at = today
@@ -350,5 +434,10 @@ def mark_reviewed_view(request, item_type, item_id):
         if request.headers.get("HX-Request"):
             return HttpResponse(f"<span class='badge bg-sage text-white'>Reviewed {today}</span>")
         messages.success(request, f"Marked as reviewed on {today}.")
-        return redirect("frameworks:review_detail", framework_id=item.domain.framework_id if hasattr(item, "domain") else item.primary_domain.framework_id)
+        return redirect(
+            "frameworks:review_detail",
+            framework_id=item.domain.framework_id
+            if hasattr(item, "domain")
+            else item.primary_domain.framework_id,
+        )
     return HttpResponseForbidden()

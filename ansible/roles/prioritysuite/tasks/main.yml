@@ -23,13 +23,100 @@
     force: true
   become_user: "{{ app_user }}"
 
+- name: Check existing virtual environment Python version
+  ansible.builtin.command:
+    cmd: "{{ app_root }}/.venv/bin/python -c 'import sys; print(sys.version_info[:2])'"
+  register: current_venv_py
+  failed_when: false
+  changed_when: false
+  become_user: "{{ app_user }}"
+
+- name: Check target Python version
+  ansible.builtin.command:
+    cmd: "{{ python_executable | default('/usr/bin/python3.12') }} -c 'import sys; print(sys.version_info[:2])'"
+  register: target_py
+  changed_when: false
+
+- name: Check for existing virtual environment backup
+  ansible.builtin.stat:
+    path: "{{ app_root }}/.venv_backup"
+  register: venv_backup_stat
+  become_user: "{{ app_user }}"
+  when: current_venv_py.rc == 0 and current_venv_py.stdout != target_py.stdout
+
+- name: Reject upgrade if previous virtual environment backup already exists
+  ansible.builtin.fail:
+    msg: "{{ app_root }}/.venv_backup already exists from an interrupted upgrade. Resolve or remove it before proceeding."
+  when:
+    - current_venv_py.rc == 0
+    - current_venv_py.stdout != target_py.stdout
+    - venv_backup_stat.stat.exists
+
+- name: Back up existing virtual environment before upgrade
+  ansible.builtin.command:
+    cmd: "mv -T {{ app_root }}/.venv {{ app_root }}/.venv_backup"
+  become_user: "{{ app_user }}"
+  register: venv_backed_up
+  when:
+    - current_venv_py.rc == 0
+    - current_venv_py.stdout != target_py.stdout
+    - not venv_backup_stat.stat.exists
+
+- name: Build replacement virtual environment and install requirements
+  when:
+    - current_venv_py.rc == 0
+    - current_venv_py.stdout != target_py.stdout
+    - venv_backed_up is defined
+    - venv_backed_up is succeeded
+  block:
+    - name: Create upgraded virtual environment and install requirements
+      ansible.builtin.pip:
+        requirements: "{{ app_root }}/requirements.txt"
+        virtualenv: "{{ app_root }}/.venv"
+        virtualenv_command: "{{ python_executable | default('/usr/bin/python3.12') }} -m venv"
+      become_user: "{{ app_user }}"
+
+    - name: Install database driver package in upgraded virtual environment
+      ansible.builtin.pip:
+        name:
+          - mysqlclient
+        virtualenv: "{{ app_root }}/.venv"
+      become_user: "{{ app_user }}"
+
+  rescue:
+    - name: Clean up failed virtual environment
+      ansible.builtin.file:
+        path: "{{ app_root }}/.venv"
+        state: absent
+
+    - name: Restore previous virtual environment after upgrade failure
+      ansible.builtin.command:
+        cmd: "mv -T {{ app_root }}/.venv_backup {{ app_root }}/.venv"
+      become_user: "{{ app_user }}"
+
+    - name: Fail task to signal upgrade failure
+      ansible.builtin.fail:
+        msg: "Virtual environment upgrade failed. Restored previous .venv."
+
+- name: Remove virtual environment backup after successful upgrade
+  ansible.builtin.file:
+    path: "{{ app_root }}/.venv_backup"
+    state: absent
+  become_user: "{{ app_user }}"
+  notify: Restart PrioritySuite
+  when:
+    - current_venv_py.rc == 0
+    - current_venv_py.stdout != target_py.stdout
+    - venv_backed_up is defined
+    - venv_backed_up is succeeded
+
 - name: Create Python virtual environment and install requirements
   ansible.builtin.pip:
     requirements: "{{ app_root }}/requirements.txt"
     virtualenv: "{{ app_root }}/.venv"
-    virtualenv_command: "{{ python_executable | default('/usr/bin/python3.11') }} -m venv"
-    extra_args: "--upgrade"
+    virtualenv_command: "{{ python_executable | default('/usr/bin/python3.12') }} -m venv"
   become_user: "{{ app_user }}"
+  when: current_venv_py.rc != 0 or current_venv_py.stdout == target_py.stdout
 
 - name: Install database driver package
   ansible.builtin.pip:
@@ -37,6 +124,7 @@
       - mysqlclient
     virtualenv: "{{ app_root }}/.venv"
   become_user: "{{ app_user }}"
+  when: current_venv_py.rc != 0 or current_venv_py.stdout == target_py.stdout
 
 - name: Deploy .env configuration file
   ansible.builtin.template:

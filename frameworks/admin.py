@@ -1,11 +1,14 @@
 from django.contrib import admin
-from frameworks.models import Framework, Domain, Why, Objective, Goal
+
+from frameworks.models import Domain, Framework, Goal, Objective, Why
+
 
 class UserOwnedAdmin(admin.ModelAdmin):
     """
     Limits admin access to the staff user's own framework data,
     respecting tenant isolation while allowing superuser global maintenance.
     """
+
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         if request.user.is_superuser:
@@ -46,6 +49,7 @@ class UserOwnedAdmin(admin.ModelAdmin):
                 return False
         return super().has_delete_permission(request, obj)
 
+
 @admin.register(Framework)
 class FrameworkAdmin(UserOwnedAdmin):
     list_display = ("name", "owner", "is_sample", "created_at", "updated_at")
@@ -55,6 +59,7 @@ class FrameworkAdmin(UserOwnedAdmin):
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == "owner" and not request.user.is_superuser:
             from django.contrib.auth import get_user_model
+
             User = get_user_model()
             kwargs["queryset"] = User.objects.filter(id=request.user.id)
             kwargs["initial"] = request.user.id
@@ -64,6 +69,7 @@ class FrameworkAdmin(UserOwnedAdmin):
         if not request.user.is_superuser:
             obj.owner = request.user
         super().save_model(request, obj, form, change)
+
 
 @admin.register(Domain)
 class DomainAdmin(UserOwnedAdmin):
@@ -76,6 +82,7 @@ class DomainAdmin(UserOwnedAdmin):
             kwargs["queryset"] = Framework.objects.filter(owner=request.user)
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
+
 @admin.register(Why)
 class WhyAdmin(UserOwnedAdmin):
     list_display = ("title", "domain", "is_non_negotiable", "is_sample", "last_reviewed_at")
@@ -86,6 +93,7 @@ class WhyAdmin(UserOwnedAdmin):
         if db_field.name == "domain" and not request.user.is_superuser:
             kwargs["queryset"] = Domain.objects.filter(framework__owner=request.user)
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
 
 @admin.register(Objective)
 class ObjectiveAdmin(UserOwnedAdmin):
@@ -106,9 +114,17 @@ class ObjectiveAdmin(UserOwnedAdmin):
                 kwargs["queryset"] = Domain.objects.filter(framework__owner=request.user)
         return super().formfield_for_manytomany(db_field, request, **kwargs)
 
+
 @admin.register(Goal)
 class GoalAdmin(UserOwnedAdmin):
-    list_display = ("title", "primary_domain", "status", "target_date", "is_sample", "last_reviewed_at")
+    list_display = (
+        "title",
+        "primary_domain",
+        "status",
+        "target_date",
+        "is_sample",
+        "last_reviewed_at",
+    )
     list_filter = ("status", "is_sample", "primary_domain__framework")
     search_fields = ("title", "description")
 
@@ -120,7 +136,9 @@ class GoalAdmin(UserOwnedAdmin):
     def formfield_for_manytomany(self, db_field, request, **kwargs):
         if not request.user.is_superuser:
             if db_field.name == "objectives":
-                kwargs["queryset"] = Objective.objects.filter(primary_domain__framework__owner=request.user)
+                kwargs["queryset"] = Objective.objects.filter(
+                    primary_domain__framework__owner=request.user
+                )
             elif db_field.name == "related_domains":
                 kwargs["queryset"] = Domain.objects.filter(framework__owner=request.user)
         return super().formfield_for_manytomany(db_field, request, **kwargs)

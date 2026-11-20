@@ -1,15 +1,16 @@
-from frameworks.models import Framework, Domain, Why, Objective, Goal
 from decisions.models import DecisionRecord
+from frameworks.models import Framework
 from llm.service import SYSTEM_FACILITATOR_PROMPT
+
 
 def generate_framework_markdown(
     framework: Framework,
     include_instructions: bool = True,
-    selected_domain_ids: list = None,
-    selected_decision_ids: list = None,
+    selected_domain_ids: list[int] | None = None,
+    selected_decision_ids: list[int] | None = None,
     include_reflections: bool = False,
 ) -> str:
-    """Generates clean Markdown for a user's framework, including prompt instructions for external LLMs."""
+    """Generates clean Markdown for a user's framework with prompt instructions for LLMs."""
     lines = []
 
     if include_instructions:
@@ -76,7 +77,9 @@ def generate_framework_markdown(
 
     # Optional selected decision assessments
     if selected_decision_ids:
-        decs = DecisionRecord.objects.filter(id__in=selected_decision_ids, framework=framework).prefetch_related(
+        decs = DecisionRecord.objects.filter(
+            id__in=selected_decision_ids, framework=framework
+        ).prefetch_related(
             "affected_domains", "relevant_whys", "supporting_objectives", "conflicting_objectives"
         )
         if decs.exists():
@@ -88,17 +91,21 @@ def generate_framework_markdown(
     # Optional saved thinking partner reflections
     if include_reflections:
         from decisions.models import LLMReflectionLog
-        refs = LLMReflectionLog.objects.filter(framework=framework, decision__isnull=True).order_by("-created_at")[:5]
+
+        refs = LLMReflectionLog.objects.filter(
+            framework=framework, decision__isnull=True
+        ).order_by("-created_at")[:5]
         if refs.exists():
             lines.append("\n# Saved Thinking Partner Reflections\n")
             for r in refs:
-                date_str = r.created_at.strftime('%Y-%m-%d') if r.created_at else "Undated"
+                date_str = r.created_at.strftime("%Y-%m-%d") if r.created_at else "Undated"
                 lines.append(f"### Reflection ({date_str})")
                 lines.append(f"**Prompt:** {r.user_prompt}")
                 lines.append(f"\n{r.llm_response}\n")
                 lines.append("---")
 
     return "\n".join(lines)
+
 
 def generate_decision_markdown(decision: DecisionRecord, include_instructions: bool = True) -> str:
     """Generates Markdown for a specific Decision Record and its cross-domain links."""
@@ -111,16 +118,18 @@ def generate_decision_markdown(decision: DecisionRecord, include_instructions: b
         lines.append(SYSTEM_FACILITATOR_PROMPT.strip())
         lines.append("\n---\n")
 
-    lines.extend([
-        f"# Decision Assessment: {decision.title}",
-        f"**Status:** {decision.get_status_display()}",
-        f"**Framework:** {decision.framework.name}",
-        "",
-        "## Proposal / Opportunity",
-        decision.proposal_description,
-        "",
-        "## Affected Domains",
-    ])
+    lines.extend(
+        [
+            f"# Decision Assessment: {decision.title}",
+            f"**Status:** {decision.get_status_display()}",
+            f"**Framework:** {decision.framework.name}",
+            "",
+            "## Proposal / Opportunity",
+            decision.proposal_description,
+            "",
+            "## Affected Domains",
+        ]
+    )
     aff = decision.affected_domains.all()
     if aff.exists():
         for d in aff:

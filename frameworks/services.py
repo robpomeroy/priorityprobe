@@ -1,11 +1,14 @@
-from frameworks.models import Framework, Domain, Why, Objective, Goal, StatusChoices
+from frameworks.models import Domain, Framework, Goal, Objective, StatusChoices, Why
+
 
 def seed_sample_framework(user) -> Framework:
     """Populates an illustrative sample framework clearly flagged with is_sample=True."""
     framework = Framework.objects.create(
         owner=user,
         name="Sample Life & Priorities Framework",
-        description="Illustrative starter framework demonstrating Domains, Whys, Objectives, and Goals.",
+        description=(
+            "Illustrative starter framework demonstrating Domains, Whys, Objectives, and Goals."
+        ),
         is_sample=True,
     )
 
@@ -13,7 +16,9 @@ def seed_sample_framework(user) -> Framework:
     family = Domain.objects.create(
         framework=framework,
         name="Family and Home",
-        description="Broad sphere covering domestic stability, relationships, and caring responsibilities.",
+        description=(
+            "Broad sphere covering domestic stability, relationships, and caring responsibilities."
+        ),
         display_order=1,
         is_sample=True,
     )
@@ -42,7 +47,7 @@ def seed_sample_framework(user) -> Framework:
         display_order=2,
         is_sample=True,
     )
-    why_work_1 = Why.objects.create(
+    Why.objects.create(
         domain=work,
         title="To contribute something worthwhile and intellectually honest through my work.",
         description="Finding meaning in craft, integrity, and serving real human needs.",
@@ -128,6 +133,7 @@ def seed_sample_framework(user) -> Framework:
     goal_evenings.related_domains.add(work)
 
     return framework
+
 
 def remove_sample_frameworks(user) -> int:
     """Removes all sample frameworks and items owned by the user."""

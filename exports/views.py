@@ -1,18 +1,22 @@
 import re
-from django.shortcuts import render, get_object_or_404
+
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
+from django.shortcuts import get_object_or_404, render
 from django.utils.text import slugify
-from frameworks.models import Framework
+
 from decisions.models import DecisionRecord
-from exports.services import generate_framework_markdown, generate_decision_markdown
+from exports.services import generate_decision_markdown, generate_framework_markdown
+from frameworks.models import Framework
+
 
 def sanitize_filename(name: str, fallback: str = "export") -> str:
     """Sanitizes user input to create a safe ASCII filename component for Content-Disposition."""
     cleaned = slugify(name)
     if not cleaned:
-        cleaned = re.sub(r'[^a-zA-Z0-9_\-]', '_', name).strip('_')
+        cleaned = re.sub(r"[^a-zA-Z0-9_\-]", "_", name).strip("_")
     return cleaned or fallback
+
 
 @login_required
 def export_framework_view(request, framework_id):
@@ -59,18 +63,25 @@ def export_framework_view(request, framework_id):
     download_query = request.GET.copy()
     download_query["download"] = "1"
 
-    return render(request, "exports/export_preview.html", {
-        "title": f"Markdown Export: {framework.name}",
-        "markdown_content": md_content,
-        "framework": framework,
-        "all_domains": all_domains,
-        "all_decisions": all_decisions,
-        "selected_domain_ids": list(all_domains.values_list("id", flat=True)) if selected_domain_ids is None else selected_domain_ids,
-        "selected_decision_ids": selected_decision_ids,
-        "include_instructions": include_instructions,
-        "include_reflections": include_reflections,
-        "download_url": f"?{download_query.urlencode()}",
-    })
+    return render(
+        request,
+        "exports/export_preview.html",
+        {
+            "title": f"Markdown Export: {framework.name}",
+            "markdown_content": md_content,
+            "framework": framework,
+            "all_domains": all_domains,
+            "all_decisions": all_decisions,
+            "selected_domain_ids": list(all_domains.values_list("id", flat=True))
+            if selected_domain_ids is None
+            else selected_domain_ids,
+            "selected_decision_ids": selected_decision_ids,
+            "include_instructions": include_instructions,
+            "include_reflections": include_reflections,
+            "download_url": f"?{download_query.urlencode()}",
+        },
+    )
+
 
 @login_required
 def export_decision_view(request, decision_id):
@@ -84,8 +95,12 @@ def export_decision_view(request, decision_id):
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
 
-    return render(request, "exports/export_preview.html", {
-        "title": f"Decision Assessment Export: {decision.title}",
-        "markdown_content": md_content,
-        "decision": decision,
-    })
+    return render(
+        request,
+        "exports/export_preview.html",
+        {
+            "title": f"Decision Assessment Export: {decision.title}",
+            "markdown_content": md_content,
+            "decision": decision,
+        },
+    )

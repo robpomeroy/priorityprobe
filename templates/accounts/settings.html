@@ -38,6 +38,9 @@
                         <div class="col-12">
                             <label class="form-label small fw-semibold">API Key</label>
                             {{ form.raw_api_key }}
+                            {% if form.raw_api_key.errors %}
+                                <div class="text-danger small mt-1">{{ form.raw_api_key.errors|striptags }}</div>
+                            {% endif %}
                             {% if config.api_key %}
                                 <div class="text-success small mt-1">✓ An encrypted API key is currently saved.</div>
                             {% endif %}

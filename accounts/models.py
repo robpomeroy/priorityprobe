@@ -1,6 +1,8 @@
-from django.db import models
 from django.contrib.auth.models import User
-from accounts.crypto import encrypt_value, decrypt_value
+from django.db import models
+
+from accounts.crypto import decrypt_value, encrypt_value
+
 
 class UserLLMConfig(models.Model):
     PROVIDER_CHOICES = [
@@ -21,10 +23,24 @@ class UserLLMConfig(models.Model):
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="llm_config")
     provider = models.CharField(max_length=50, choices=PROVIDER_CHOICES, default="ollama")
-    _encrypted_api_key = models.TextField(db_column="encrypted_api_key", blank=True, default="")
-    model_name = models.CharField(max_length=120, default="ollama/llama3.1", help_text="e.g. ollama/llama3.1 or openrouter/anthropic/claude-3.5-sonnet")
-    api_base = models.CharField(max_length=255, blank=True, default="http://localhost:11434", help_text="Base URL (e.g. http://localhost:11434 for Ollama or https://openrouter.ai/api/v1)")
-    consent_given = models.BooleanField(default=False, help_text="User consent to share selected framework prompts with external LLM")
+    _encrypted_api_key = models.TextField(
+        db_column="encrypted_api_key", blank=True, default="", editable=False
+    )
+    model_name = models.CharField(
+        max_length=120,
+        default="ollama/llama3.1",
+        help_text="e.g. ollama/llama3.1 or openrouter/anthropic/claude-3.5-sonnet",
+    )
+    api_base = models.CharField(
+        max_length=255,
+        blank=True,
+        default="http://localhost:11434",
+        help_text="Base URL (e.g. http://localhost:11434 for Ollama or https://openrouter.ai/api/v1)",
+    )
+    consent_given = models.BooleanField(
+        default=False,
+        help_text="User consent to share selected framework prompts with external LLM",
+    )
     theme_preference = models.CharField(max_length=20, choices=THEME_CHOICES, default="auto")
 
     created_at = models.DateTimeField(auto_now_add=True)

@@ -1,25 +1,68 @@
 import ipaddress
 import socket
 from urllib.parse import urlparse
+
 from django import forms
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+
 from accounts.models import UserLLMConfig
 
-ALLOWED_PROVIDERS = {"ollama", "openrouter", "openai", "anthropic", "gemini", "custom", "none"}
+CLOUD_METADATA_HOSTS = {
+    "169.254.169.254",
+    "169.254.170.2",
+    "fd00:ec2::254",
+    "100.100.100.200",
+    "metadata.google.internal",
+}
 
-def _is_ip_address_safe(ip: ipaddress._BaseAddress) -> bool:
+CLOUD_METADATA_IPS = {
+    ipaddress.ip_address("169.254.169.254"),
+    ipaddress.ip_address("169.254.170.2"),
+    ipaddress.ip_address("fd00:ec2::254"),
+    ipaddress.ip_address("100.100.100.200"),
+}
+
+LOOPBACK_HOSTS = {
+    "localhost",
+    "127.0.0.1",
+    "::1",
+    "0:0:0:0:0:0:0:1",
+}
+
+
+def is_loopback_host(host: str) -> bool:
+    if host in LOOPBACK_HOSTS:
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+        mapped = getattr(ip, "ipv4_mapped", None)
+        return (mapped if mapped is not None else ip).is_loopback
+    except ValueError:
+        return False
+
+
+def is_restricted_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     if hasattr(ip, "ipv4_mapped") and ip.ipv4_mapped:
         ip = ip.ipv4_mapped
-    if ip.is_unspecified:
+    if ip.is_loopback:
+        return False
+    if ip.is_unspecified or ip.is_multicast or ip.is_link_local or ip.is_reserved:
+        return True
+    return ip in CLOUD_METADATA_IPS
+
+
+def _is_ip_address_safe(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    if hasattr(ip, "ipv4_mapped") and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    if is_restricted_ip(ip):
         return False
     if ip.is_loopback:
         return bool(getattr(settings, "DEBUG", False))
-    if not ip.is_global or ip.is_private or ip.is_link_local or ip.is_reserved or ip.is_multicast:
-        return False
-    return True
+    return not (not ip.is_global or ip.is_private)
+
 
 def is_safe_ollama_endpoint(hostname: str) -> bool:
     """
@@ -27,20 +70,36 @@ def is_safe_ollama_endpoint(hostname: str) -> bool:
     Private/internal network ranges or cloud metadata are prohibited unless explicitly allowlisted.
     In hosted production deployments, loopback/private destinations are blocked unless
     specifically configured in settings.OLLAMA_ALLOWED_HOSTS.
+    Restricted metadata/link-local/multicast destinations are blocked unconditionally.
     """
     target_host = hostname.strip().lower()
+    if target_host in CLOUD_METADATA_HOSTS:
+        return False
+
+    is_debug = bool(getattr(settings, "DEBUG", False))
     allowlist = getattr(settings, "OLLAMA_ALLOWED_HOSTS", None)
-    if allowlist is not None:
-        normalized_allowlist = {h.strip().lower() for h in allowlist if h.strip()}
-        if target_host in normalized_allowlist:
+    normalized_allowlist = (
+        {h.strip().lower() for h in allowlist if h.strip()}
+        if allowlist is not None
+        else set()
+    )
+    loopback_allowed = is_debug or bool(normalized_allowlist & LOOPBACK_HOSTS)
+
+    # Allowlisted endpoint: verify it is not restricted
+    if target_host in normalized_allowlist:
+        try:
+            ip = ipaddress.ip_address(target_host)
+            if is_restricted_ip(ip):
+                return False
             return True
-        if "localhost" in normalized_allowlist and target_host in ("127.0.0.1", "::1", "0:0:0:0:0:0:0:1"):
+        except ValueError:
+            # Target is an allowlisted hostname (e.g. Docker sidecar 'ollama').
+            # Form validation allows configured hostnames without synchronous DNS calls;
+            # connection-time IP validation & anti-rebinding are enforced by SSRFSafeTransport.
             return True
 
-    # In local development (DEBUG=True), allow localhost and loopbacks by default
-    if getattr(settings, "DEBUG", False):
-        if target_host in ("localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1"):
-            return True
+    if is_loopback_host(target_host):
+        return loopback_allowed
 
     try:
         ip = ipaddress.ip_address(target_host)
@@ -51,66 +110,79 @@ def is_safe_ollama_endpoint(hostname: str) -> bool:
             addr_infos = socket.getaddrinfo(target_host, None, socket.AF_UNSPEC)
             if not addr_infos:
                 return False
-            for family, socktype, proto, canonname, sockaddr in addr_infos:
+            for _, _, _, _, sockaddr in addr_infos:
                 addr_str = sockaddr[0]
                 resolved_ip = ipaddress.ip_address(addr_str)
                 if not _is_ip_address_safe(resolved_ip):
                     return False
-        except Exception:
+        except (socket.gaierror, ValueError, OSError):
             return False
 
     return True
 
-def validate_llm_api_base(provider: str, api_base: str, api_key: str = None):
+
+def validate_llm_api_base(provider: str, api_base: str, api_key: str | None = None) -> str:
     if provider == "none":
         return api_base
-    
+
     if not api_base:
         if provider == "custom":
             raise ValidationError("Custom provider requires an explicit API Base URL.")
-        if provider == "ollama":
-            if not is_safe_ollama_endpoint("localhost"):
-                raise ValidationError("Ollama in production requires an explicit, allowlisted API Base URL.")
+        if provider == "ollama" and not is_safe_ollama_endpoint("localhost"):
+            raise ValidationError(
+                "Ollama in production requires an explicit, allowlisted API Base URL."
+            )
         return api_base
-    
+
     parsed = urlparse(api_base)
     if parsed.scheme not in ("http", "https"):
         raise ValidationError("API Base URL must use http or https scheme.")
-    
+
     hostname = (parsed.hostname or "").lower()
     if not hostname:
         raise ValidationError("Invalid API Base hostname.")
 
-    if hostname in ("169.254.169.254", "metadata.google.internal"):
+    if hostname in CLOUD_METADATA_HOSTS:
         raise ValidationError("Access to cloud metadata endpoints is prohibited.")
 
     if provider == "openrouter":
         if hostname not in ("openrouter.ai", "www.openrouter.ai"):
-            raise ValidationError("OpenRouter API Base must point to openrouter.ai (e.g. https://openrouter.ai/api/v1).")
+            raise ValidationError(
+                "OpenRouter API Base must point to openrouter.ai (e.g. https://openrouter.ai/api/v1)."
+            )
         if parsed.scheme != "https":
             raise ValidationError("OpenRouter connections must use HTTPS.")
 
     elif provider == "openai":
         if hostname not in ("api.openai.com",):
-            raise ValidationError("OpenAI API Base must point to api.openai.com (e.g. https://api.openai.com/v1).")
+            raise ValidationError(
+                "OpenAI API Base must point to api.openai.com (e.g. https://api.openai.com/v1)."
+            )
         if parsed.scheme != "https":
             raise ValidationError("OpenAI connections must use HTTPS.")
 
     elif provider == "anthropic":
         if hostname not in ("api.anthropic.com",):
-            raise ValidationError("Anthropic API Base must point to api.anthropic.com (e.g. https://api.anthropic.com/v1).")
+            raise ValidationError(
+                "Anthropic API Base must point to api.anthropic.com (e.g. https://api.anthropic.com/v1)."
+            )
         if parsed.scheme != "https":
             raise ValidationError("Anthropic connections must use HTTPS.")
 
     elif provider == "gemini":
         if hostname not in ("generativelanguage.googleapis.com",):
-            raise ValidationError("Google Gemini API Base must point to generativelanguage.googleapis.com.")
+            raise ValidationError(
+                "Google Gemini API Base must point to generativelanguage.googleapis.com."
+            )
         if parsed.scheme != "https":
             raise ValidationError("Gemini connections must use HTTPS.")
 
     elif provider in ("ollama", "custom"):
         if not is_safe_ollama_endpoint(hostname):
-            raise ValidationError(f"Disallowed {provider} destination: private, link-local, or unresolvable internal hostnames are prohibited.")
+            raise ValidationError(
+                f"Disallowed {provider} destination: private, link-local, "
+                "or unresolvable internal hostnames are prohibited."
+            )
         is_loopback = hostname in ("localhost", "127.0.0.1", "::1", "0:0:0:0:0:0:0:1")
         if not is_loopback:
             try:
@@ -120,22 +192,40 @@ def validate_llm_api_base(provider: str, api_base: str, api_key: str = None):
                 pass
         if not is_loopback and parsed.scheme != "https":
             if provider == "custom":
-                raise ValidationError("Custom remote API base URL must use HTTPS to protect credentials and data.")
+                raise ValidationError(
+                    "Custom remote API base URL must use HTTPS to protect credentials and data."
+                )
             if provider == "ollama" and api_key:
-                raise ValidationError("Ollama remote API base URL must use HTTPS when an API key is configured to protect credentials.")
+                raise ValidationError(
+                    "Ollama remote API base URL must use HTTPS when an API key "
+                    "is configured to protect credentials."
+                )
 
     return api_base
 
+
 class UserRegistrationForm(forms.ModelForm):
-    password = forms.CharField(widget=forms.PasswordInput(attrs={"class": "form-control", "placeholder": "Create a password"}))
-    password_confirm = forms.CharField(widget=forms.PasswordInput(attrs={"class": "form-control", "placeholder": "Confirm password"}))
+    password = forms.CharField(
+        widget=forms.PasswordInput(
+            attrs={"class": "form-control", "placeholder": "Create a password"}
+        )
+    )
+    password_confirm = forms.CharField(
+        widget=forms.PasswordInput(
+            attrs={"class": "form-control", "placeholder": "Confirm password"}
+        )
+    )
 
     class Meta:
         model = User
         fields = ("username", "email")
         widgets = {
-            "username": forms.TextInput(attrs={"class": "form-control", "placeholder": "Username"}),
-            "email": forms.EmailInput(attrs={"class": "form-control", "placeholder": "Email address"}),
+            "username": forms.TextInput(
+                attrs={"class": "form-control", "placeholder": "Username"}
+            ),
+            "email": forms.EmailInput(
+                attrs={"class": "form-control", "placeholder": "Email address"}
+            ),
         }
 
     def clean(self):
@@ -156,10 +246,17 @@ class UserRegistrationForm(forms.ModelForm):
                     self.add_error("password", error)
         return cleaned_data
 
+
 class UserLLMConfigForm(forms.ModelForm):
     raw_api_key = forms.CharField(
         required=False,
-        widget=forms.PasswordInput(render_value=False, attrs={"class": "form-control", "placeholder": "Enter new API key (leave blank to keep existing)"}),
+        widget=forms.PasswordInput(
+            render_value=False,
+            attrs={
+                "class": "form-control",
+                "placeholder": "Enter new API key (leave blank to keep existing)",
+            },
+        ),
         help_text="Key is securely encrypted at rest. Not required for local Ollama.",
     )
 
@@ -180,13 +277,16 @@ class UserLLMConfigForm(forms.ModelForm):
         api_base = cleaned_data.get("api_base")
         raw_api_key = (cleaned_data.get("raw_api_key") or "").strip()
 
-        effective_key = raw_api_key or None
+        effective_key: str | None = raw_api_key or None
         if not effective_key and self.instance and self.instance.pk:
             old_provider = getattr(self.instance, "provider", "")
             old_api_base = (getattr(self.instance, "api_base", "") or "").strip()
             new_api_base = (api_base or "").strip()
             if old_provider == provider and old_api_base == new_api_base:
                 effective_key = (getattr(self.instance, "api_key", "") or "").strip() or None
+
+        if provider in {"openrouter", "openai", "anthropic", "gemini"} and not effective_key:
+            self.add_error("raw_api_key", "An API key is required for the selected LLM provider.")
 
         if provider:
             try:
